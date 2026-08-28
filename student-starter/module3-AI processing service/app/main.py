@@ -403,7 +403,7 @@ def detect_vpn_proxy(ip_address: str, user_agent: str) -> tuple:
 # PRIVACY REQUIREMENTS (IMPORTANT!)
 # =============================================================================
 """
-Your implementation MUST follow these privacy requirements:
+Your implementation MUST follow these privacy EY backend description:
 
 1. NO RAW IMAGES STORED
    - Process images in-memory only

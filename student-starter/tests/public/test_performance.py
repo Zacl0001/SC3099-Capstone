@@ -1,7 +1,7 @@
 """
 PUBLIC TESTS: Performance (5 points)
 
-These tests verify performance requirements:
+These tests verify performance EY backend description:
 - Response latency (p95 < 2s) - 3 pts
 - Concurrent user handling - 1 pt
 - Database query optimization - 1 pt

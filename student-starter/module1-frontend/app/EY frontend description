@@ -1,0 +1,6 @@
+This module provides the primary user interface for interacting with the system.
+Upload meeting transcripts and documents.
+Display meeting summaries.
+Display extracted action items and decisions.
+Provide a chat interface for users to ask questions about meeting content.
+Display supporting references from meeting transcripts.

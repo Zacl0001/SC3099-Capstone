@@ -1,0 +1,6 @@
+This module is responsible for analysing meeting content.
+Meeting summarization.
+Action item extraction.
+Decision extraction.
+Topic identification.
+Response generation using LLMs.

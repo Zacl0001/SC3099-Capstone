@@ -110,7 +110,7 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install test dependencies
 pip install --upgrade pip
-pip install -r requirements-test.txt
+pip install -r EY requirements-test.txt
 ```
 
 ### Step 2: Start Your Services

@@ -64,7 +64,7 @@ services:
 
   face-recognition:
     build:
-      context: ./module3-face-recognition
+      context: module3-AI processing service
       dockerfile: Dockerfile
     container_name: saiv-face-recognition
     ports:
@@ -95,7 +95,7 @@ services:
 
   dashboard:
     build:
-      context: ./module4-observability
+      context: module4-knowledge assistant service
       dockerfile: Dockerfile
     container_name: saiv-dashboard
     ports:
@@ -120,7 +120,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./module4-observability/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./module4-knowledge assistant service/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -138,7 +138,7 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: admin
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./module4-observability/grafana/provisioning:/etc/grafana/provisioning
+      - ./module4-knowledge assistant service/grafana/provisioning:/etc/grafana/provisioning
     depends_on:
       - prometheus
     networks:
@@ -151,7 +151,7 @@ services:
       - "4317:4317"   # gRPC
       - "4318:4318"   # HTTP
     volumes:
-      - ./module4-observability/otel-collector-config.yml:/etc/otel/config.yaml
+      - ./module4-knowledge assistant service/otel-collector-config.yml:/etc/otel/config.yaml
     command: ["--config=/etc/otel/config.yaml"]
     networks:
       - saiv-network

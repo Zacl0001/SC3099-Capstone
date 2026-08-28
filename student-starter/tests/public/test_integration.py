@@ -109,7 +109,7 @@ class TestEndToEndCheckIn:
 
 
 class TestBasicPerformance:
-    """Test basic performance requirements (2 points)"""
+    """Test basic performance EY backend description (2 points)"""
 
     @pytest.mark.points(1, category="performance")
     def test_auth_endpoint_latency(self, client, test_student):
