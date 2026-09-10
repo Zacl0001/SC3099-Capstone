@@ -1,0 +1,30 @@
+I'd create:
+
+MeetingCard.tsx
+MeetingList.tsx
+UploadTranscript.tsx
+MeetingStatus.tsx
+MeetingCard.tsx
+Displays:
+
+Meeting name
+Date
+Status
+Open button
+MeetingList.tsx
+Displays multiple cards.
+
+UploadTranscript.tsx
+Handles:
+
+Select file
+→ Validate
+→ Upload
+→ Show progress
+MeetingStatus.tsx
+Displays:
+
+Uploaded
+Processing
+Completed
+Failed

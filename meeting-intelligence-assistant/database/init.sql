@@ -1,0 +1,16 @@
+--This creates the initial PostgreSQL database structure if you're not using migrations for everything.
+--
+--Potential tables:
+--
+--users
+--meetings
+--transcripts
+--transcript_chunks
+--summaries
+--action_items
+--decisions
+--topics
+--chat_messages
+--Because you're using pgvector, transcript_chunks might contain:
+--
+--embedding vector(...)

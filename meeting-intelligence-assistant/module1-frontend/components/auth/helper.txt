@@ -1,0 +1,16 @@
+Potential files:
+
+LoginForm.tsx
+RegisterForm.tsx
+ProtectedRoute.tsx
+LoginForm.tsx
+Handles the actual login form.
+
+RegisterForm.tsx
+Handles registration.
+
+ProtectedRoute.tsx
+Prevents unauthenticated users from accessing:
+
+/dashboard
+/meetings

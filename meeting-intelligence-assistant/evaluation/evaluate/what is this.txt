@@ -1,0 +1,32 @@
+Runs your evaluation.
+
+Eventually:
+
+python evaluation/evaluate.py
+Output something like:
+
+=============================
+Meeting Intelligence Evaluation
+=============================
+
+Summary
+------
+Correctness: 87%
+
+Action Items
+------
+Precision: 91%
+Recall:    84%
+F1:        87%
+
+Decisions
+------
+Precision: 89%
+Recall:    86%
+
+RAG
+------
+Retrieval relevance: 91%
+Citation accuracy:   94%
+Grounded answers:    90%
+That would be excellent material for your final presentation.

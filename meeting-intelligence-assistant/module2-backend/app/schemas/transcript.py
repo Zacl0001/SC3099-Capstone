@@ -1,0 +1,5 @@
+# Define:
+#
+# TranscriptResponse
+# TranscriptUploadResponse
+# ProcessingStatus

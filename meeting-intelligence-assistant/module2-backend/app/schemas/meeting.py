@@ -1,0 +1,5 @@
+# Define:
+#
+# MeetingCreate
+# MeetingResponse
+# MeetingUpdate

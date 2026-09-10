@@ -1,0 +1,8 @@
+--Adds development data.
+--
+--For example:
+--
+--demo user
+--demo meeting
+--demo transcript
+--This is useful when someone clones your repository and wants to see the application immediately.

@@ -1,0 +1,8 @@
+Use Alembic if possible.
+
+Migration files represent changes like:
+
+001_initial_schema.py
+002_add_topics.py
+003_add_chat_messages.py
+This is much better than repeatedly deleting/recreating your database.

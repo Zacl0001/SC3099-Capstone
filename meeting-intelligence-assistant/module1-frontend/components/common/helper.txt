@@ -1,0 +1,8 @@
+Useful shared components:
+
+Button.tsx
+Modal.tsx
+LoadingSpinner.tsx
+ErrorMessage.tsx
+Navbar.tsx
+These prevent every student from creating their own version of the same UI.

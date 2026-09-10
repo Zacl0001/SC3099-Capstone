@@ -1,0 +1,12 @@
+Display:
+
+Decision
+Timestamp
+Evidence
+Example:
+
+Decision #1
+
+The project launch will be postponed to Friday.
+
+Source: 31:20

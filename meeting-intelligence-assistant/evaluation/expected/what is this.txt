@@ -1,0 +1,20 @@
+Expected outputs:
+
+meeting_01.json
+meeting_02.json
+meeting_03.json
+Example:
+
+{
+  "decisions": [
+    "Launch next Friday"
+  ],
+  "action_items": [
+    {
+      "task": "Finish payment integration",
+      "assignee": "Mike"
+    }
+  ]
+}
+This allows you to objectively test your AI.
+

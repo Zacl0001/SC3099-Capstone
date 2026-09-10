@@ -1,0 +1,16 @@
+I'd use:
+
+ActionItemList.tsx
+ActionItemCard.tsx
+Display:
+
+Task
+Assignee
+Deadline
+Status
+Evidence
+Example:
+
+☐ Complete payment integration
+  Assigned: Mike
+  Due: 15 Sep

@@ -1,0 +1,14 @@
+Contains test transcripts:
+
+meeting_01.txt
+meeting_02.txt
+meeting_03.txt
+Create meetings covering different scenarios:
+
+normal meeting
+many action items
+ambiguous decisions
+multiple speakers
+no decisions
+no action items
+conflicting opinions

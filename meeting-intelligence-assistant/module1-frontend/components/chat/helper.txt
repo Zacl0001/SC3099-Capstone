@@ -1,0 +1,24 @@
+I'd have:
+
+ChatWindow.tsx
+ChatMessage.tsx
+ChatInput.tsx
+Citation.tsx
+CitationList.tsx
+ChatWindow.tsx
+Overall chat interface.
+
+ChatMessage.tsx
+One user/AI message.
+
+ChatInput.tsx
+Question input.
+
+Citation.tsx
+Display one source.
+
+Example:
+
+[1] 31:20–32:10
+CitationList.tsx
+Display all sources.
