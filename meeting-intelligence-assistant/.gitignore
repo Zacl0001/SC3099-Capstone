@@ -1,23 +1,24 @@
-#Purpose: Prevent unnecessary/sensitive files from entering Git.
-#
-#Include:
-#
-#.env
-#.env.*
-#!.env.example
-#
-#__pycache__/
-#*.pyc
-#
-#node_modules/
-#.next/
-#
-#.pytest_cache/
-#
-#*.log
-#
-#.vscode/
-#.idea/
-#
-#storage/*
-#!storage/.gitkeep
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Frontend
+node_modules/
+.next/
+
+# Logs and editor settings
+*.log
+.vscode/
+.idea/
+
+# Uploaded files
+storage/*
+!storage/.gitkeep
