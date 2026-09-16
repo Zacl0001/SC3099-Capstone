@@ -1,0 +1,98 @@
+{
+    "meeting_id": "meeting-006-highly-realistic",
+    "title": "Urgent Debugging Session: KAS API Failure",
+    "meeting_date": "2026-09-30",
+    "meeting_start_time": "09:15:00",
+    "sections": [
+        {
+            "section_id": "section-001",
+            "speaker_name": "Alex",
+            "timestamp": "00:00:02",
+            "text": "Okay, the KAS API is down. It's throwing 500 errors on every query. What's going on?"
+        },
+        {
+            "section_id": "section-002",
+            "speaker_name": "Jamie",
+            "timestamp": "00:00:08",
+            "text": "I'm looking. The... the logs show... wait. It's a database connection error. 'Too many clients already'."
+        },
+        {
+            "section_id": "section-003",
+            "speaker_name": "Taylor",
+            "timestamp": "00:00:14",
+            "text": "Too many clients? How? We have a connection pool. It should... it should handle that."
+        },
+        {
+            "section_id": "section-004",
+            "speaker_name": "Jamie",
+            "timestamp": "00:00:18",
+            "text": "I know, right? But the, um, the active connections are spiking to max. It's like they're not being... uh... released."
+        },
+        {
+            "section_id": "section-005",
+            "speaker_name": "Alex",
+            "timestamp": "00:00:25",
+            "text": "Not released? Did someone push a change? Taylor, did your chunking experiment go live?"
+        },
+        {
+            "section_id": "section-006",
+            "speaker_name": "Taylor",
+            "timestamp": "00:00:30",
+            "text": "No! No, no, that's still on a dev branch. It's... wait. Jamie, did you... did you check the new summarization service?"
+        },
+        {
+            "section_id": "section-007",
+            "speaker_name": "Jamie",
+            "timestamp": "00:00:36",
+            "text": "The what? Oh, the... the background job that generates summaries for old meetings? I... I think that deployed yesterday."
+        },
+        {
+            "section_id": "section-008",
+            "speaker_name": "Taylor",
+            "timestamp": "00:00:42",
+            "text": "And how does it connect to the DB? Does it use the main API's connection pool or... or does it create its own?"
+        },
+        {
+            "section_id": "section-009",
+            "speaker_name": "Jamie",
+            "timestamp": "00:00:48",
+            "text": "Uh... oh, no. I think... I think it creates its own. Per-per-per-per worker."
+        },
+        {
+            "section_id": "section-010",
+            "speaker_name": "Alex",
+            "timestamp": "00:00:55",
+            "text": "Per worker? And how many workers are there?"
+        },
+        {
+            "section_id": "section-011",
+            "speaker_name": "Jamie",
+            "timestamp": "00:00:58",
+            "text": "Um... twenty."
+        },
+        {
+            "section_id": "section-012",
+            "speaker_name": "Taylor",
+            "timestamp": "00:01:01",
+            "text": "Twenty. So twenty workers are each spinning up their own connection pool. That's our problem. That's exhausting the database limit."
+        },
+        {
+            "section_id": "section-013",
+            "speaker_name": "Alex",
+            "timestamp": "00:01:07",
+            "text": "Okay. Okay, good. We found it. Jamie, kill that service. Now. We'll redeploy it after it's fixed to use a single, shared connection client."
+        },
+        {
+            "section_id": "section-014",
+            "speaker_name": "Jamie",
+            "timestamp": "00:01:14",
+            "text": "Doing it. Killing the deployment... now."
+        },
+        {
+            "section_id": "section-015",
+            "speaker_name": "Taylor",
+            "timestamp": "00:01:18",
+            "text": "Phew. Okay. That was... that was close."
+        }
+    ]
+}
