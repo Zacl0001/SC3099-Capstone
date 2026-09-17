@@ -1,4 +1,11 @@
-{
+from ingestion import create_document
+from chunking import chunk_document
+from embedding import get_embedding_model
+from vector_store import create_vector_store
+from llama_index.core import Settings, VectorStoreIndex
+
+
+meeting_data = {
     "meeting_id": "meeting-006-highly-realistic",
     "title": "Urgent Debugging Session: KAS API Failure",
     "meeting_date": "2026-09-30",
@@ -96,3 +103,34 @@
         }
     ]
 }
+
+# 1. JSON → Document
+document = create_document(meeting_data)
+
+print("=== DOCUMENT ===")
+print(document.text)
+print()
+
+
+# 2. Document → Nodes
+nodes = chunk_document(document)
+
+print("=== NODES ===")
+print(f"Number of nodes: {len(nodes)}")
+
+for i, node in enumerate(nodes):
+    print(f"\nNode {i + 1}:")
+    print(node.text)
+
+Settings.embed_model = get_embedding_model()
+
+# 3. Nodes → Embeddings → Vector Store
+vector_store = create_vector_store()
+
+index = VectorStoreIndex(
+    nodes,
+    vector_store=vector_store,
+)
+
+print("\n=== INDEX ===")
+print("VectorStoreIndex created successfully!")
