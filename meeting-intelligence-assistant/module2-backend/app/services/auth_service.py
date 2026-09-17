@@ -19,9 +19,9 @@ def get_user_by_email(db: Session, email: str) -> User | None:
     return db.scalar(statement)
 
 def create_user(db: Session, email:str, password: str) -> User:
-    email = email.strip().lower
+    email = email.strip().lower()
 
-    if get_user_by_email is not None:
+    if get_user_by_email(db,email) is not None:
         raise ValueError("Email already registered, please login")
 
     user = User(
@@ -29,7 +29,7 @@ def create_user(db: Session, email:str, password: str) -> User:
         password_hash = hash_password(password)
     )
 
-    db.add(User)
+    db.add(user)
 
     try:
         db.commit()
