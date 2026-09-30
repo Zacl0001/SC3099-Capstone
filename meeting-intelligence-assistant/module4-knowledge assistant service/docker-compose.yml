@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: kas-postgres
+    environment:
+      POSTGRES_DB: kas
+      POSTGRES_USER: kas
+      POSTGRES_PASSWORD: kas_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
