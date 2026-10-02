@@ -6,6 +6,8 @@
 # UserResponse
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from datetime import datetime
+from typing import Literal
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -16,3 +18,12 @@ class UserResponse(BaseModel):
 
     id: int
     email: EmailStr
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    expires_at: datetime
