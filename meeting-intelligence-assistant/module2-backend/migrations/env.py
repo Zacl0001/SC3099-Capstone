@@ -2,6 +2,7 @@ from logging.config import fileConfig
 
 from app.db.database import Base, engine
 from app.models.user import User
+from app.models.auth_session import AuthSession
 
 from alembic import context
 
