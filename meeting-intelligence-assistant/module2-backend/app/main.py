@@ -29,9 +29,11 @@ See: docs/OLD API-SPECIFICATION.md for complete endpoint documentation.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.auth import router as auth_router
+from app.api.routes.meetings import router as meeting_router
 
 app = FastAPI(title = "Meeting intelligence Backend")
 app.include_router(auth_router)
+app.include_router(meeting_router)
 
 
 
