@@ -11,6 +11,7 @@
 # created_at
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy.dialects.postgresql import JSONB 
 from app.db.database import Base
 
 class Transcript(Base):
@@ -18,7 +19,9 @@ class Transcript(Base):
 
     id = Column(Integer, primary_key=True)
     meeting_id = Column(Integer, ForeignKey("meetings.id"), nullable=False, unique=True,)
+    sections = Column(JSONB, nullable=True)
 
     file_name = Column(String(255), nullable=False)
     storage_key = Column(String(1024), nullable=False) #helps to find the uploaded file
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+

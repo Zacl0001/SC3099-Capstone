@@ -41,7 +41,7 @@ def parse_transcript_section(text: str) -> list[dict[str,str]]:
     return sections
 
 
-def get_extracted_transcript(db: Session, meeting_id: int, user_id: int,
+def process_transcript(db: Session, meeting_id: int, user_id: int,
 ) -> dict | None: 
     meeting = db.scalar(
             select(Meeting).where (
@@ -60,11 +60,52 @@ def get_extracted_transcript(db: Session, meeting_id: int, user_id: int,
 
     text = extract_transcript_txt(transcript.storage_key)
     sections = parse_transcript_section(text)
+    transcript.sections = sections
+
+    try:
+        db.commit()
+    
+    except Exception:
+        db.rollback()
+        raise
+    
 
     return{
         "meeting_id" : meeting.id,
         "title": meeting.title,
         "sections": sections,
+    }
+
+
+def get_saved_transcript(
+    db: Session,
+    meeting_id: int,
+    user_id: int,
+) -> dict | None:
+    meeting = db.scalar(
+        select(Meeting).where(
+            Meeting.id == meeting_id,
+            Meeting.user_id == user_id,
+        )
+    )
+
+    if meeting is None:
+        return None
+
+    transcript = db.scalar(
+        select(Transcript).where(Transcript.meeting_id == meeting.id)
+    )
+
+    if transcript is None:
+        return None
+
+    if transcript.sections is None:
+        raise ValueError("Transcript has not been processed yet")
+
+    return {
+        "meeting_id": meeting.id,
+        "title": meeting.title,
+        "sections": transcript.sections,
     }
 
 

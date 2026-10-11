@@ -19,6 +19,11 @@
 from pathlib import Path
 from uuid import uuid4
 from fastapi import UploadFile
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
+from docx import Document
+from zipfile import BadZipFile
+from lxml.etree import XMLSyntaxError
 
 STORAGE_ROOT  = Path(__file__).resolve().parents[3] / "storage" # builds path to storage folder
 
@@ -67,18 +72,76 @@ def extract_transcript_txt(storage_key: str) -> str:
     if not file_path.is_relative_to(STORAGE_ROOT.resolve()): #checks if file path is in storage folder
         raise ValueError("Invalid storage key")
 
-    if file_path.suffix.lower() != ".txt":
-        raise ValueError("text extraction only supports txt files for now")
+    extension = file_path.suffix.lower()
 
-    try:
-        text = file_path.read_text(encoding="utf-8-sig")
+    if extension == ".txt":
 
-    except UnicodeDecodeError as exc:
-        raise ValueError("save txt file using UTF-8 encoding") from exc
+        try:
+            text = file_path.read_text(encoding="utf-8-sig")
+
+        except UnicodeDecodeError as exc:
+            raise ValueError("save txt file using UTF-8 encoding") from exc
+
+    elif extension == ".pdf":
+        text = extract_pdf_text(file_path)
+
+    elif extension == ".docx":
+        text = extract_docx_text(file_path)
+
+    else:
+        raise ValueError("Extraction only supports PDF, WORD and TXT files only")
 
     text = text.strip()
 
     if not text:
         raise ValueError("transcript contains no text")
+
+    return text
+
+def extract_pdf_text(file_path: Path) -> str:
+    try:
+        with file_path.open("rb") as source:
+            reader = PdfReader(source)
+
+            if reader.is_encrypted:
+                raise ValueError("Encrypted pdfs are not supported")
+
+            pages = []
+
+            for page in reader.pages:
+                pages.append(page.extract_text() or "")
+
+
+    except PdfReadError as exc:
+        raise ValueError("Unable to read this PDF file") from exc
+
+
+    text = "\n".join(pages).strip()
+
+    if not text:
+        raise ValueError("PDF contains no extractable text")
+
+
+    return text
+
+
+def extract_docx_text(file_path: Path) -> str:
+    try:
+        with file_path.open("rb") as source:
+            document = Document(source)
+            paragraphs = []
+
+            for paragraph in document.paragraphs:
+                paragraphs.append(paragraph.text)
+
+    except (BadZipFile, XMLSyntaxError, KeyError, ValueError) as exc:
+        raise ValueError("Unable to read this DOCX file") from exc
+
+
+    text = "\n".join(paragraphs).strip()
+
+
+    if not text:
+        raise ValueError("this docx file contains no extractable text")
 
     return text
