@@ -3,36 +3,38 @@
 // Every backend call goes through this file. Requests use relative /api/*
 // URLs which next.config.js proxies to module2-backend.
 //
-// While backend endpoints are still being built, NEXT_PUBLIC_MOCK_AUTH /
-// NEXT_PUBLIC_MOCK_MEETINGS route calls to lib/mock.ts instead (see config.ts).
+// Feature flags in config.ts route calls to lib/mock.ts for anything module2
+// does not implement yet.
 //
-// Endpoints used:
-//   POST   /api/auth/register                 RegisterRequest -> User
-//   POST   /api/auth/login                    LoginRequest    -> TokenResponse
-//   GET    /api/auth/me                                       -> User
-//   POST   /api/auth/logout                                   -> 204
-//   GET    /api/meetings                                      -> Meeting[]
-//   POST   /api/meetings                      MeetingCreate   -> Meeting
-//   GET    /api/meetings/{id}                                 -> Meeting
-//   DELETE /api/meetings/{id}                                 -> 204
-//   POST   /api/meetings/{id}/transcript      multipart "file" -> Transcript
-//   GET    /api/meetings/{id}/transcript                      -> Transcript
-//   POST   /api/meetings/{id}/process                         -> Meeting
-//   GET    /api/meetings/{id}/summary                         -> Summary
-//   GET    /api/meetings/{id}/action-items                    -> ActionItem[]
-//   GET    /api/meetings/{id}/decisions                       -> Decision[]
-//   POST   /api/meetings/{id}/chat            ChatRequest     -> ChatResponse
+// module2 endpoints used:
+//   POST   /api/auth/register                    {email, password}      -> User
+//   POST   /api/auth/login                       {email, password}      -> TokenResponse
+//   GET    /api/auth/me                                                 -> User
+//   POST   /api/auth/logout                                             -> 204
+//   GET    /api/meetings                                                -> {id, title, created_at}[]
+//   POST   /api/meetings/upload                  multipart title + file -> {id, title, created_at}
+//   POST   /api/meetings/{id}/transcript/process                        -> Transcript (sections)
+//   GET    /api/meetings/{id}/transcript                                -> Transcript (409 until processed)
+//
+// Not in module2 yet (mocked / worked around until they exist):
+//   GET    /api/meetings/{id}                  -> looked up from GET /api/meetings
+//   DELETE /api/meetings/{id}                  -> Delete button hidden
+//   GET    /api/meetings/{id}/summary          -> Summary         } computed in the browser from
+//   GET    /api/meetings/{id}/action-items     -> ActionItem[]    } the real transcript while
+//   GET    /api/meetings/{id}/decisions        -> Decision[]      } NEXT_PUBLIC_MOCK_AI=true
+//   POST   /api/meetings/{id}/chat  {question} -> ChatResponse    }
 
 import { clearToken, getToken, saveToken } from './auth';
-import { MOCK_AUTH, MOCK_MEETINGS } from './config';
+import { MOCK_AI, MOCK_AUTH, MOCK_MEETINGS } from './config';
 import { ApiError } from './errors';
 import * as mock from './mock';
+import { segmentsOf } from './transcript';
 import type {
   ActionItem,
   ChatResponse,
   Decision,
   Meeting,
-  MeetingCreate,
+  MeetingStatus,
   Summary,
   Transcript,
   User,
@@ -64,6 +66,7 @@ function handleUnauthorized(path: string) {
   if (path.startsWith('/api/auth/login')) return;
   clearToken();
   cachedUser = null;
+  clearCaches();
   window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
 }
 
@@ -94,9 +97,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     if (res.status === 401) handleUnauthorized(path);
+    // A non-JSON 5xx comes from the Next.js proxy (backend down) or an unhandled backend error.
     const fallback =
       res.status >= 500
-        ? 'The server ran into a problem. Please try again.'
+        ? typeof body === 'object'
+          ? 'The server ran into a problem. Please try again.'
+          : 'The backend service is unavailable or ran into an error. Please try again later.'
         : res.status === 404
           ? 'Not found.'
           : `Request failed (${res.status}).`;
@@ -145,47 +151,64 @@ export async function logout(): Promise<void> {
   } finally {
     clearToken();
     cachedUser = null;
+    clearCaches();
   }
 }
 
-/** Owner key used to scope mock meeting data per user. */
+/** Owner key used to scope mock meeting data per user (id + email survives DB resets). */
 function mockOwner(): string {
-  return cachedUser ? String(cachedUser.id) : 'anonymous';
+  return cachedUser ? `${cachedUser.id}:${cachedUser.email}` : 'anonymous';
 }
 
 // ---------------------------------------------------------------------------
-// Meetings
+// Caches (live mode)
+//
+// module2 has no GET /api/meetings/{id} or status field, so the meeting page
+// derives both from the list and the transcript. The transcript is also the
+// input to the browser-side AI, so it is cached rather than refetched per tab.
 // ---------------------------------------------------------------------------
 
-export function getMeetings(): Promise<Meeting[]> {
-  if (MOCK_MEETINGS) return mock.getMeetings(mockOwner());
-  return request<Meeting[]>('/api/meetings');
+const transcriptCache = new Map<string, Promise<Transcript>>();
+const analysisCache = new Map<string, mock.Analysis>();
+
+function clearCaches() {
+  transcriptCache.clear();
+  analysisCache.clear();
 }
 
-export function getMeeting(id: Id): Promise<Meeting> {
-  if (MOCK_MEETINGS) return mock.getMeeting(mockOwner(), id);
-  return request<Meeting>(`/api/meetings/${id}`);
+function liveTranscript(id: Id): Promise<Transcript> {
+  const key = String(id);
+  let pending = transcriptCache.get(key);
+  if (!pending) {
+    pending = request<Transcript>(`/api/meetings/${id}/transcript`);
+    transcriptCache.set(key, pending);
+    pending.catch(() => transcriptCache.delete(key));
+  }
+  return pending;
 }
 
-export function createMeeting(data: MeetingCreate): Promise<Meeting> {
-  if (MOCK_MEETINGS) return mock.createMeeting(mockOwner(), data);
-  return request<Meeting>('/api/meetings', { method: 'POST', body: JSON.stringify(data) });
+/** module2 returns 409 from GET .../transcript until the transcript has been processed. */
+async function liveStatus(id: Id): Promise<MeetingStatus> {
+  try {
+    await liveTranscript(id);
+    return 'completed';
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 409) return 'uploaded';
+    throw err;
+  }
 }
 
-export function deleteMeeting(id: Id): Promise<void> {
-  if (MOCK_MEETINGS) return mock.deleteMeeting(mockOwner(), id);
-  return request<void>(`/api/meetings/${id}`, { method: 'DELETE' });
+async function liveAnalysis(id: Id): Promise<mock.Analysis> {
+  const key = String(id);
+  const cached = analysisCache.get(key);
+  if (cached) return cached;
+  const analysis = mock.analyseSegments(segmentsOf(await liveTranscript(id)));
+  analysisCache.set(key, analysis);
+  return analysis;
 }
 
-// ---------------------------------------------------------------------------
-// Transcript
-// ---------------------------------------------------------------------------
-
-/** Uploads a transcript file. Uses XHR so upload progress can be reported. */
-export function uploadTranscript(id: Id, file: File, onProgress?: (percent: number) => void): Promise<Transcript> {
-  if (MOCK_MEETINGS) return mock.uploadTranscript(mockOwner(), id, file, onProgress);
-
-  const path = `/api/meetings/${id}/transcript`;
+/** Multipart POST via XHR so upload progress can be reported. */
+function uploadForm<T>(path: string, form: FormData, onProgress?: (percent: number) => void): Promise<T> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', path);
@@ -204,54 +227,113 @@ export function uploadTranscript(id: Id, file: File, onProgress?: (percent: numb
         body = xhr.responseText;
       }
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(body as Transcript);
+        resolve(body as T);
       } else {
         if (xhr.status === 401) handleUnauthorized(path);
         reject(new ApiError(extractDetail(body, `Upload failed (${xhr.status}).`), xhr.status));
       }
     };
-
-    const form = new FormData();
-    form.append('file', file);
     xhr.send(form);
   });
 }
 
+// ---------------------------------------------------------------------------
+// Meetings
+// ---------------------------------------------------------------------------
+
+export function getMeetings(): Promise<Meeting[]> {
+  if (MOCK_MEETINGS) return mock.getMeetings(mockOwner());
+  return request<Meeting[]>('/api/meetings');
+}
+
+export async function getMeeting(id: Id): Promise<Meeting> {
+  if (MOCK_MEETINGS) return mock.getMeeting(mockOwner(), id);
+  const meeting = (await getMeetings()).find((m) => String(m.id) === String(id));
+  if (!meeting) throw new ApiError('Meeting not found.', 404);
+  return { ...meeting, status: await liveStatus(id) };
+}
+
+/** Creates a meeting and stores its transcript file in one call. */
+export async function uploadMeeting(
+  title: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<Meeting> {
+  if (MOCK_MEETINGS) return mock.uploadMeeting(mockOwner(), title, file, onProgress);
+  const form = new FormData();
+  form.append('title', title);
+  form.append('file', file);
+  const meeting = await uploadForm<Meeting>('/api/meetings/upload', form, onProgress);
+  return { ...meeting, status: 'uploaded' };
+}
+
+export function deleteMeeting(id: Id): Promise<void> {
+  if (MOCK_MEETINGS) return mock.deleteMeeting(mockOwner(), id);
+  return Promise.reject(new ApiError('Deleting meetings is not supported by the backend yet.', 501));
+}
+
+// ---------------------------------------------------------------------------
+// Transcript
+// ---------------------------------------------------------------------------
+
 export function getTranscript(id: Id): Promise<Transcript> {
   if (MOCK_MEETINGS) return mock.getTranscript(mockOwner(), id);
-  return request<Transcript>(`/api/meetings/${id}/transcript`);
+  return liveTranscript(id);
+}
+
+/**
+ * Starts analysis. In module2 this parses the uploaded file into speaker
+ * sections synchronously, and fails with 422 if a line isn't "Speaker: text".
+ */
+export async function processMeeting(id: Id): Promise<Meeting> {
+  if (MOCK_MEETINGS) return mock.processMeeting(mockOwner(), id);
+  const key = String(id);
+  transcriptCache.delete(key);
+  analysisCache.delete(key);
+  const transcript = await request<Transcript>(`/api/meetings/${id}/transcript/process`, { method: 'POST' });
+  transcriptCache.set(key, Promise.resolve(transcript));
+  return getMeeting(id);
 }
 
 // ---------------------------------------------------------------------------
 // AI processing outputs
 // ---------------------------------------------------------------------------
 
-export function processMeeting(id: Id): Promise<Meeting> {
-  if (MOCK_MEETINGS) return mock.processMeeting(mockOwner(), id);
-  return request<Meeting>(`/api/meetings/${id}/process`, { method: 'POST' });
+// Accepts both {"action_items": [...]} (module3's shape) and a bare list,
+// and fills in ids when the backend doesn't send them.
+function listOf<T extends { id?: number | string }>(body: unknown, key: string): T[] {
+  const items = (Array.isArray(body) ? body : ((body as Record<string, unknown> | null)?.[key] ?? [])) as T[];
+  return items.map((item, i) => ({ ...item, id: item.id ?? i + 1 }));
 }
 
-export function getSummary(id: Id): Promise<Summary> {
+export async function getSummary(id: Id): Promise<Summary> {
   if (MOCK_MEETINGS) return mock.getSummary(mockOwner(), id);
+  if (MOCK_AI) return (await liveAnalysis(id)).summary;
   return request<Summary>(`/api/meetings/${id}/summary`);
 }
 
-export function getActionItems(id: Id): Promise<ActionItem[]> {
+export async function getActionItems(id: Id): Promise<ActionItem[]> {
   if (MOCK_MEETINGS) return mock.getActionItems(mockOwner(), id);
-  return request<ActionItem[]>(`/api/meetings/${id}/action-items`);
+  if (MOCK_AI) return (await liveAnalysis(id)).action_items;
+  return listOf<ActionItem>(await request<unknown>(`/api/meetings/${id}/action-items`), 'action_items');
 }
 
-export function getDecisions(id: Id): Promise<Decision[]> {
+export async function getDecisions(id: Id): Promise<Decision[]> {
   if (MOCK_MEETINGS) return mock.getDecisions(mockOwner(), id);
-  return request<Decision[]>(`/api/meetings/${id}/decisions`);
+  if (MOCK_AI) return (await liveAnalysis(id)).decisions;
+  return listOf<Decision>(await request<unknown>(`/api/meetings/${id}/decisions`), 'decisions');
 }
 
 // ---------------------------------------------------------------------------
 // Chat / Q&A
 // ---------------------------------------------------------------------------
 
-export function askQuestion(id: Id, question: string): Promise<ChatResponse> {
+export async function askQuestion(id: Id, question: string): Promise<ChatResponse> {
   if (MOCK_MEETINGS) return mock.askQuestion(mockOwner(), id, question);
+  if (MOCK_AI) {
+    const [transcript, analysis] = await Promise.all([liveTranscript(id), liveAnalysis(id)]);
+    return mock.answerQuestion(question, segmentsOf(transcript), analysis.summary);
+  }
   return request<ChatResponse>(`/api/meetings/${id}/chat`, {
     method: 'POST',
     body: JSON.stringify({ question }),

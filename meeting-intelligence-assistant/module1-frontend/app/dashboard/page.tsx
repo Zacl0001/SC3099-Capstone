@@ -22,6 +22,17 @@ export default function DashboardPage() {
   const name = user?.email.split('@')[0];
   const completed = meetings?.filter((m) => m.status === 'completed').length ?? 0;
   const processing = meetings?.filter((m) => m.status === 'processing').length ?? 0;
+  // module2's meeting list has no status, so only show those tiles when it's known.
+  const hasStatus = meetings?.some((m) => m.status !== undefined) ?? false;
+  const stats = [
+    { label: 'Meetings', value: meetings?.length },
+    ...(hasStatus
+      ? [
+          { label: 'Analysed', value: completed },
+          { label: 'Processing', value: processing },
+        ]
+      : []),
+  ];
   const recent = [...(meetings ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, RECENT_COUNT);
 
   return (
@@ -32,11 +43,7 @@ export default function DashboardPage() {
       </div>
 
       <dl className="grid grid-cols-3 gap-3 sm:max-w-xl">
-        {[
-          { label: 'Meetings', value: meetings?.length },
-          { label: 'Analysed', value: completed },
-          { label: 'Processing', value: processing },
-        ].map((stat) => (
+        {stats.map((stat) => (
           <div key={stat.label} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <dt className="text-xs font-medium text-slate-500">{stat.label}</dt>
             <dd className="mt-1 text-2xl font-semibold text-slate-900">{loading ? '–' : (stat.value ?? 0)}</dd>

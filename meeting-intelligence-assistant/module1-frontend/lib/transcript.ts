@@ -8,7 +8,7 @@
 //   Alice (00:01:23): text          Alice: text
 //   WebVTT / SRT cue blocks         plain paragraphs
 
-import type { Citation, TranscriptSegment } from './types';
+import type { Citation, Transcript, TranscriptSegment } from './types';
 
 const TIME = String.raw`\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d{1,3})?`;
 const CUE_TIMING = new RegExp(`^(${TIME})\\s*-->\\s*(${TIME})`);
@@ -114,4 +114,18 @@ export function findSegmentForCitation(
     const hay = normaliseText(s.text);
     return hay.length > 0 && (hay.includes(needle) || needle.includes(hay.slice(0, 60)));
   });
+}
+
+/** Segments for display: module2's parsed sections when present, else parse the raw text. */
+export function segmentsOf(transcript: Transcript): TranscriptSegment[] {
+  if (transcript.sections) {
+    return transcript.sections.map((s, index) => ({
+      id: s.section_id,
+      index,
+      speaker: s.speaker_name,
+      start_time: s.timestamp ?? undefined,
+      text: s.text,
+    }));
+  }
+  return parseTranscript(transcript.raw_text ?? '');
 }

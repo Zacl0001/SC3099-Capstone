@@ -31,6 +31,8 @@ export default function TranscriptViewer({ segments, fileName, highlightId, high
     const speakers = [...new Set(segments.map((s) => s.speaker).filter(Boolean))] as string[];
     return new Map(speakers.map((s, i) => [s, SPEAKER_COLOURS[i % SPEAKER_COLOURS.length]]));
   }, [segments]);
+  // module2's parsed sections have no timestamps; don't reserve a column for them.
+  const hasTimes = useMemo(() => segments.some((s) => s.start_time), [segments]);
 
   const q = query.trim().toLowerCase();
   const visible = q
@@ -85,7 +87,9 @@ export default function TranscriptViewer({ segments, fileName, highlightId, high
                   highlighted ? 'animate-highlight border-l-4 border-amber-400 bg-amber-50/60' : ''
                 }`}
               >
-                <span className="w-16 shrink-0 pt-0.5 font-mono text-xs text-slate-400">{seg.start_time ?? ''}</span>
+                {hasTimes && (
+                  <span className="w-16 shrink-0 pt-0.5 font-mono text-xs text-slate-400">{seg.start_time ?? ''}</span>
+                )}
                 <div className="min-w-0 flex-1">
                   {seg.speaker && (
                     <p className={`mb-0.5 text-xs font-semibold ${speakerColour.get(seg.speaker) ?? ''}`}>{seg.speaker}</p>

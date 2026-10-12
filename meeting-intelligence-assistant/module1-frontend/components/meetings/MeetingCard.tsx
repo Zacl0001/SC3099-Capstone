@@ -16,7 +16,7 @@ export default function MeetingCard({ meeting }: { meeting: Meeting }) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="truncate font-medium text-slate-900 group-hover:text-brand-700">{meeting.title}</h3>
-          <MeetingStatus status={meeting.status} />
+          {meeting.status && <MeetingStatus status={meeting.status} />}
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
           <span className="inline-flex items-center gap-1">

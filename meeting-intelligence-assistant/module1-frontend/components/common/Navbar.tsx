@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { MOCK_AUTH, MOCK_MEETINGS } from '@/lib/config';
+import { MOCK_AI, MOCK_AUTH, MOCK_MEETINGS } from '@/lib/config';
 import { LogoIcon, LogoutIcon } from './Icons';
 
 const links = [
@@ -42,10 +42,16 @@ export default function Navbar() {
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
-          {(MOCK_AUTH || MOCK_MEETINGS) && (
+          {MOCK_AI && (
             <span
               className="hidden rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 md:inline"
-              title="Some API calls are simulated in the browser (see .env.example)"
+              title={
+                MOCK_AUTH
+                  ? 'Accounts and meetings are simulated in this browser'
+                  : MOCK_MEETINGS
+                    ? 'Meetings, transcripts and AI results are simulated in this browser'
+                    : 'Summary, action items, decisions and chat are computed in this browser until the backend provides them'
+              }
             >
               Demo mode
             </span>

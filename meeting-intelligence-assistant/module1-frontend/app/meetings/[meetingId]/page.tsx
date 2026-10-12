@@ -20,6 +20,7 @@ import ActionItemList from '@/components/action-items/ActionItemList';
 import Button from '@/components/common/Button';
 import ChatWindow from '@/components/chat/ChatWindow';
 import DecisionList from '@/components/decisions/DecisionList';
+import EmptyState from '@/components/common/EmptyState';
 import ErrorMessage from '@/components/common/ErrorMessage';
 import {
   AlertIcon,
@@ -39,10 +40,11 @@ import MeetingStatus from '@/components/meetings/MeetingStatus';
 import TranscriptViewer from '@/components/meetings/TranscriptViewer';
 import SummaryView from '@/components/summary/SummaryView';
 import * as api from '@/lib/api';
+import { CAN_DELETE_MEETINGS, MOCK_MEETINGS } from '@/lib/config';
 import { errorMessage } from '@/lib/errors';
 import { formatDateTime } from '@/lib/format';
 import { useAsync } from '@/lib/hooks';
-import { findSegmentForCitation, parseTranscript } from '@/lib/transcript';
+import { findSegmentForCitation, segmentsOf } from '@/lib/transcript';
 import type { ChatMessage, Citation, Meeting } from '@/lib/types';
 
 const POLL_MS = 3000;
@@ -104,15 +106,14 @@ function MeetingDetail({ meetingId }: { meetingId: string }) {
   }, [meeting, searchParams]);
 
   // --- Transcript & AI outputs --------------------------------------------
+  // module2 only returns the transcript once it has been processed into sections.
+  const transcriptReady = !!meeting && (MOCK_MEETINGS || status !== 'uploaded');
   const transcript = useAsync(
     () => api.getTranscript(meetingId),
-    `transcript-${meetingId}-${meeting?.transcript_file_name ?? ''}-${meeting?.updated_at ?? ''}`,
-    !!meeting,
+    `transcript-${meetingId}-${status ?? ''}-${meeting?.updated_at ?? ''}`,
+    transcriptReady,
   );
-  const segments = useMemo(
-    () => (transcript.data ? parseTranscript(transcript.data.raw_text) : []),
-    [transcript.data],
-  );
+  const segments = useMemo(() => (transcript.data ? segmentsOf(transcript.data) : []), [transcript.data]);
   const summary = useAsync(() => api.getSummary(meetingId), `summary-${meetingId}`, completed);
   const actionItems = useAsync(() => api.getActionItems(meetingId), `actions-${meetingId}`, completed);
   const decisions = useAsync(() => api.getDecisions(meetingId), `decisions-${meetingId}`, completed);
@@ -160,7 +161,14 @@ function MeetingDetail({ meetingId }: { meetingId: string }) {
   );
 
   // --- Actions -------------------------------------------------------------
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(() => searchParams.get('processError'));
+  // Drop the one-off error from the URL so a refresh doesn't show it again.
+  useEffect(() => {
+    if (!searchParams.has('processError')) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('processError');
+    router.replace(params.size ? `${pathname}?${params}` : pathname, { scroll: false });
+  }, [searchParams, router, pathname]);
   const [starting, setStarting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -218,7 +226,7 @@ function MeetingDetail({ meetingId }: { meetingId: string }) {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-2xl font-semibold break-words text-slate-900">{meeting.title}</h1>
-              <MeetingStatus status={meeting.status} />
+              {meeting.status && <MeetingStatus status={meeting.status} />}
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
               <span className="inline-flex items-center gap-1.5">
@@ -234,10 +242,12 @@ function MeetingDetail({ meetingId }: { meetingId: string }) {
             </div>
             {meeting.description && <p className="mt-2 text-sm text-slate-600">{meeting.description}</p>}
           </div>
-          <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(true)}>
-            <TrashIcon className="size-4" />
-            Delete
-          </Button>
+          {CAN_DELETE_MEETINGS && (
+            <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(true)}>
+              <TrashIcon className="size-4" />
+              Delete
+            </Button>
+          )}
         </div>
       </div>
 
@@ -348,11 +358,18 @@ function MeetingDetail({ meetingId }: { meetingId: string }) {
                 Couldn&apos;t pinpoint that passage in the transcript – it may have been paraphrased.
               </p>
             )}
+            {!transcriptReady && (
+              <EmptyState
+                icon={<FileIcon />}
+                title="Transcript not processed yet"
+                description="Analyse the meeting to split the transcript into speaker turns and view it here."
+              />
+            )}
             <Section state={transcript}>
               {(data) => (
                 <TranscriptViewer
                   segments={segments}
-                  fileName={data.file_name}
+                  fileName={data.file_name ?? meeting.transcript_file_name ?? undefined}
                   highlightId={highlight.id}
                   highlightNonce={highlight.nonce}
                 />
@@ -451,7 +468,7 @@ function StatusPanel({ meeting, starting, onStart }: { meeting: Meeting; startin
       <div className="min-w-0 flex-1">
         <p className="font-medium text-brand-900">Transcript uploaded</p>
         <p className="text-sm text-brand-900/80">
-          Run the analysis to get a summary, action items, decisions and the Q&amp;A assistant.
+          Analyse it to view the transcript and get a summary, action items, decisions and the Q&amp;A assistant.
         </p>
       </div>
       <Button onClick={onStart} loading={starting}>

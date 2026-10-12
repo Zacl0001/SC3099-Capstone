@@ -13,11 +13,10 @@ import { formatBytes } from '@/lib/format';
 import { SAMPLE_TRANSCRIPT, SAMPLE_TRANSCRIPT_TITLE } from '@/lib/sampleTranscript';
 
 type Source = 'file' | 'paste';
-type Step = 'idle' | 'creating' | 'uploading' | 'processing';
+type Step = 'idle' | 'uploading' | 'processing';
 
 const stepLabel: Record<Step, string> = {
   idle: '',
-  creating: 'Creating meeting…',
   uploading: 'Uploading transcript…',
   processing: 'Starting analysis…',
 };
@@ -44,7 +43,6 @@ export default function UploadTranscript() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
   const [source, setSource] = useState<Source>('file');
   const [file, setFile] = useState<File | null>(null);
   const [text, setText] = useState('');
@@ -98,66 +96,47 @@ export default function UploadTranscript() {
       if (upload.size > MAX_TRANSCRIPT_BYTES) return setError('Transcript is too long.');
     }
 
-    let meetingId: number | string | null = null;
+    let meetingId: number | string;
     try {
-      setStep('creating');
-      const meeting = await api.createMeeting({
-        title: title.trim(),
-        description: description.trim() || undefined,
-      });
-      meetingId = meeting.id;
-
       setStep('uploading');
       setProgress(0);
-      await api.uploadTranscript(meeting.id, upload, setProgress);
+      meetingId = (await api.uploadMeeting(title.trim(), upload, setProgress)).id;
     } catch (err) {
-      // Don't leave an empty meeting behind if the upload itself failed.
-      if (meetingId !== null) api.deleteMeeting(meetingId).catch(() => {});
       setError(errorMessage(err, 'Upload failed. Please try again.'));
       setStep('idle');
       return;
     }
 
+    // The meeting exists now, so always go to its page. If processing fails
+    // (e.g. a line isn't "Speaker: text"), the page shows why and offers a retry.
+    let processError: string | null = null;
     if (autoProcess) {
       setStep('processing');
-      // If this fails the meeting page offers a "Start analysis" button.
-      await api.processMeeting(meetingId).catch(() => {});
+      await api.processMeeting(meetingId).catch((err) => {
+        processError = errorMessage(err, 'Could not process the transcript.');
+      });
     }
-    router.push(`/meetings/${meetingId}`);
+    router.push(
+      `/meetings/${meetingId}${processError ? `?processError=${encodeURIComponent(processError)}` : ''}`,
+    );
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label htmlFor="meeting-title" className="mb-1.5 block text-sm font-medium text-slate-700">
-            Meeting title
-          </label>
-          <input
-            id="meeting-title"
-            className={inputClass}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Weekly standup – 5 Oct"
-            maxLength={200}
-            disabled={busy}
-            required
-          />
-        </div>
-        <div>
-          <label htmlFor="meeting-description" className="mb-1.5 block text-sm font-medium text-slate-700">
-            Description <span className="font-normal text-slate-400">(optional)</span>
-          </label>
-          <input
-            id="meeting-description"
-            className={inputClass}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Project, attendees, context…"
-            maxLength={500}
-            disabled={busy}
-          />
-        </div>
+      <div>
+        <label htmlFor="meeting-title" className="mb-1.5 block text-sm font-medium text-slate-700">
+          Meeting title
+        </label>
+        <input
+          id="meeting-title"
+          className={inputClass}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="e.g. Weekly standup – 5 Oct"
+          maxLength={255}
+          disabled={busy}
+          required
+        />
       </div>
 
       <div>
@@ -253,10 +232,13 @@ export default function UploadTranscript() {
             className={`${inputClass} min-h-56 font-mono text-xs leading-relaxed`}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={'[00:00:05] Alice: Morning everyone…\n[00:00:21] Bob: …'}
+            placeholder={'Alice: Morning everyone…\nBob: …'}
             disabled={busy}
           />
         )}
+        <p className="mt-2 text-xs text-slate-500">
+          Format: one speaker turn per line, written as <code className="font-mono">Speaker: what they said</code>.
+        </p>
       </div>
 
       <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -281,7 +263,7 @@ export default function UploadTranscript() {
           <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
             <div
               className="h-full rounded-full bg-brand-600 transition-all"
-              style={{ width: step === 'creating' ? '10%' : step === 'uploading' ? `${10 + progress * 0.8}%` : '100%' }}
+              style={{ width: step === 'uploading' ? `${progress * 0.9}%` : '100%' }}
             />
           </div>
         </div>

@@ -39,6 +39,8 @@ export default function MeetingsPage() {
         return sort === 'newest' ? -cmp : cmp;
       });
   }, [meetings, query, status, sort]);
+  // module2's meeting list has no status, so the filter only appears when it's known.
+  const hasStatus = meetings?.some((m) => m.status !== undefined) ?? false;
 
   return (
     <div className="space-y-6">
@@ -72,24 +74,26 @@ export default function MeetingsPage() {
               <input
                 type="search"
                 aria-label="Search meetings"
-                placeholder="Search by title, description or file name"
+                placeholder="Search meetings"
                 className={`${inputClass} pl-9`}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
-            <select
-              aria-label="Filter by status"
-              className={`${inputClass} sm:w-40`}
-              value={status}
-              onChange={(e) => setStatus(e.target.value as MeetingStatus | 'all')}
-            >
-              <option value="all">All statuses</option>
-              <option value="completed">Completed</option>
-              <option value="processing">Processing</option>
-              <option value="uploaded">Uploaded</option>
-              <option value="failed">Failed</option>
-            </select>
+            {hasStatus && (
+              <select
+                aria-label="Filter by status"
+                className={`${inputClass} sm:w-40`}
+                value={status}
+                onChange={(e) => setStatus(e.target.value as MeetingStatus | 'all')}
+              >
+                <option value="all">All statuses</option>
+                <option value="completed">Completed</option>
+                <option value="processing">Processing</option>
+                <option value="uploaded">Uploaded</option>
+                <option value="failed">Failed</option>
+              </select>
+            )}
             <select
               aria-label="Sort meetings"
               className={`${inputClass} sm:w-40`}

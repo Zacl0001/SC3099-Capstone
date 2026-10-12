@@ -35,34 +35,46 @@ export interface TokenResponse {
 
 export type MeetingStatus = 'uploaded' | 'processing' | 'completed' | 'failed';
 
+/** module2 MeetingResponse is {id, title, created_at}; the other fields are optional extras. */
 export interface Meeting {
   id: number | string;
   title: string;
   description?: string | null;
-  status: MeetingStatus;
+  /** Not returned by module2's list endpoint; the frontend works it out on the meeting page. */
+  status?: MeetingStatus;
   created_at: string;
   updated_at?: string | null;
   transcript_file_name?: string | null;
   error_message?: string | null;
 }
 
-export interface MeetingCreate {
-  title: string;
-  description?: string;
-}
-
 // ---------------------------------------------------------------------------
 // Transcript
 // ---------------------------------------------------------------------------
 
-export interface Transcript {
-  meeting_id: number | string;
-  file_name: string;
-  raw_text: string;
-  created_at: string;
+/** One speaker turn as parsed by module2 (POST /api/meetings/{id}/transcript/process). */
+export interface TranscriptSection {
+  section_id: string;
+  speaker_id: string;
+  speaker_name: string;
+  text: string;
+  timestamp?: string | null;
 }
 
-/** One line/turn of a transcript. Parsed client-side from raw_text. */
+/**
+ * module2 returns {meeting_id, title, sections}. The browser mock stores the raw
+ * text instead, which the frontend parses itself (lib/transcript.ts).
+ */
+export interface Transcript {
+  meeting_id: number | string;
+  title?: string;
+  sections?: TranscriptSection[];
+  file_name?: string;
+  raw_text?: string;
+  created_at?: string;
+}
+
+/** One line/turn of a transcript, from module2 sections or parsed from raw_text. */
 export interface TranscriptSegment {
   id: string;
   index: number;
