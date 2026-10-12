@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ChatIcon } from '@/components/common/Icons';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import * as api from '@/lib/api';
-import { MOCK_MEETINGS } from '@/lib/config';
+import { MOCK_AI } from '@/lib/config';
 import { errorMessage } from '@/lib/errors';
 import type { ChatMessage as ChatMessageType, Citation } from '@/lib/types';
 import ChatInput from './ChatInput';
@@ -77,7 +77,7 @@ export default function ChatWindow({ meetingId, messages, onMessagesChange, onVi
                 </button>
               ))}
             </div>
-            {MOCK_MEETINGS && (
+            {MOCK_AI && (
               <p className="mt-6 text-xs text-amber-700">Demo mode: answers come from keyword matching, not an LLM.</p>
             )}
           </div>

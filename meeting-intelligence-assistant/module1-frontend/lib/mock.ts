@@ -13,7 +13,6 @@ import type {
   Citation,
   Decision,
   Meeting,
-  MeetingCreate,
   Summary,
   TokenResponse,
   Transcript,
@@ -127,7 +126,7 @@ function loadMeetings(owner: string): MockMeeting[] {
   let changed = false;
   for (const m of meetings) {
     if (m.status === 'processing' && m.processing_started_at && Date.now() - m.processing_started_at > PROCESSING_MS) {
-      Object.assign(m, analyse(m.transcript?.raw_text ?? ''));
+      Object.assign(m, analyseSegments(parseTranscript(m.transcript?.raw_text ?? '')));
       m.status = 'completed';
       m.updated_at = new Date().toISOString();
       changed = true;
@@ -172,22 +171,6 @@ export async function getMeeting(owner: string, id: Id): Promise<Meeting> {
   return toMeeting(findMeeting(loadMeetings(owner), id));
 }
 
-export async function createMeeting(owner: string, data: MeetingCreate): Promise<Meeting> {
-  await sleep(200);
-  const meetings = loadMeetings(owner);
-  const now = new Date().toISOString();
-  const meeting: MockMeeting = {
-    id: meetings.reduce((max, m) => Math.max(max, m.id), 0) + 1,
-    title: data.title,
-    description: data.description ?? null,
-    status: 'uploaded',
-    created_at: now,
-    updated_at: now,
-  };
-  write(meetingsKey(owner), [...meetings, meeting]);
-  return toMeeting(meeting);
-}
-
 export async function deleteMeeting(owner: string, id: Id): Promise<void> {
   await sleep(150);
   const meetings = loadMeetings(owner);
@@ -198,38 +181,34 @@ export async function deleteMeeting(owner: string, id: Id): Promise<void> {
   );
 }
 
-export async function uploadTranscript(
+/** Mirrors module2's POST /api/meetings/upload: create the meeting and store its transcript in one call. */
+export async function uploadMeeting(
   owner: string,
-  id: Id,
+  title: string,
   file: File,
   onProgress?: (percent: number) => void,
-): Promise<Transcript> {
+): Promise<Meeting> {
   for (const p of [20, 45, 70, 90]) {
     onProgress?.(p);
     await sleep(120);
   }
   const raw_text = await file.text();
-  if (!raw_text.trim()) throw new ApiError('Transcript file is empty', 422);
+  if (!raw_text.trim()) throw new ApiError('Empty file, please upload another file', 400);
 
   const meetings = loadMeetings(owner);
-  const meeting = findMeeting(meetings, id);
-  const transcript: Transcript = {
-    meeting_id: meeting.id,
-    file_name: file.name,
-    raw_text,
-    created_at: new Date().toISOString(),
-  };
-  Object.assign(meeting, {
-    transcript,
+  const now = new Date().toISOString();
+  const id = meetings.reduce((max, m) => Math.max(max, m.id), 0) + 1;
+  const meeting: MockMeeting = {
+    id,
+    title,
     status: 'uploaded',
-    summary: undefined,
-    action_items: undefined,
-    decisions: undefined,
-    updated_at: transcript.created_at,
-  });
-  write(meetingsKey(owner), meetings);
+    created_at: now,
+    updated_at: now,
+    transcript: { meeting_id: id, file_name: file.name, raw_text, created_at: now },
+  };
+  write(meetingsKey(owner), [...meetings, meeting]);
   onProgress?.(100);
-  return transcript;
+  return toMeeting(meeting);
 }
 
 export async function getTranscript(owner: string, id: Id): Promise<Transcript> {
@@ -277,7 +256,7 @@ export async function askQuestion(owner: string, id: Id, question: string): Prom
   await sleep(700);
   const meeting = findMeeting(loadMeetings(owner), id);
   if (!meeting.transcript) throw new ApiError('No transcript uploaded for this meeting', 409);
-  return answer(question, parseTranscript(meeting.transcript.raw_text), meeting.summary);
+  return answerQuestion(question, parseTranscript(meeting.transcript.raw_text ?? ''), meeting.summary);
 }
 
 // ---------------------------------------------------------------------------
@@ -372,8 +351,14 @@ function extractTopics(segments: TranscriptSegment[]): string[] {
   return topics.map(capitalise);
 }
 
-function analyse(raw: string): Pick<MockMeeting, 'summary' | 'action_items' | 'decisions'> {
-  const segments = parseTranscript(raw);
+export interface Analysis {
+  summary: Summary;
+  action_items: ActionItem[];
+  decisions: Decision[];
+}
+
+/** Keyword-heuristic "analysis" of a transcript. Also used on real backend transcripts (MOCK_AI). */
+export function analyseSegments(segments: TranscriptSegment[]): Analysis {
   const action_items: ActionItem[] = [];
   const decisions: Decision[] = [];
   const used = new Set<string>();
@@ -438,7 +423,8 @@ function analyse(raw: string): Pick<MockMeeting, 'summary' | 'action_items' | 'd
   return { summary: { summary, key_points: keyPoints, topics }, action_items, decisions };
 }
 
-function answer(question: string, segments: TranscriptSegment[], summary?: Summary): ChatResponse {
+/** Keyword-retrieval "Q&A" with citations. Also used on real backend transcripts (MOCK_AI). */
+export function answerQuestion(question: string, segments: TranscriptSegment[], summary?: Summary): ChatResponse {
   const qWords = [...new Set(wordsOf(question).map(stem))];
   const scored = segments
     .map((s) => {

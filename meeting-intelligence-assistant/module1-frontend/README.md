@@ -9,8 +9,8 @@ Next.js 16 (App Router) + TypeScript + Tailwind CSS 4.
 | `/` | Landing page |
 | `/register`, `/login` | Account creation and sign-in (`/api/auth/*`) |
 | `/dashboard` | Welcome, stats, upload a transcript, recent meetings |
-| `/meetings` | All meetings in the account – search, filter by status, sort |
-| `/meetings/new` | Upload a transcript (file drag-and-drop or paste text, with a sample transcript) |
+| `/meetings` | All meetings in the account – search, sort (and filter by status when the backend provides one) |
+| `/meetings/new` | Upload a transcript (`.txt`/`.pdf`/`.docx` drag-and-drop, or paste text, with a sample transcript) |
 | `/meetings/[id]` | Processing status (auto-refreshes), then tabs for **Summary**, **Action items**, **Decisions**, **Ask AI** (chat with clickable citations) and **Transcript** (searchable; citations and "View in transcript" links scroll to and highlight the source line) |
 
 `/dashboard` and `/meetings/*` redirect to `/login` when signed out, then send you back to the page you asked for after sign-in.
@@ -31,49 +31,70 @@ Other scripts: `npm run build`, `npm start`, `npm run lint`, `npm run typecheck`
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `BACKEND_URL` | `http://localhost:8000` | Where `/api/*` is proxied (module2). Read at **build** time. |
-| `NEXT_PUBLIC_MOCK_AUTH` | `true` | Fake login/register in the browser |
-| `NEXT_PUBLIC_MOCK_MEETINGS` | `true` | Fake meetings, transcripts, AI outputs and chat in the browser |
+| `NEXT_PUBLIC_MOCK_AUTH` | `false` | Fake accounts in the browser. Turns the two below on as well. |
+| `NEXT_PUBLIC_MOCK_MEETINGS` | `false` | Fake meetings and transcripts in the browser. Turns `MOCK_AI` on as well. |
+| `NEXT_PUBLIC_MOCK_AI` | `true` | Compute summary, action items, decisions and chat in the browser from the transcript |
 
-With no `.env.local` everything is mocked, so the UI works with no backend running. Mock data lives in the browser's `localStorage`, and the mock "AI" is keyword matching. A **Demo mode** badge shows in the navbar while any mock is on.
+The defaults follow what module2 currently implements:
 
-The backend auth endpoints already exist, so `NEXT_PUBLIC_MOCK_AUTH=false` + `NEXT_PUBLIC_MOCK_MEETINGS=true` uses real accounts with mocked meeting features. (Mock auth + real meetings isn't supported, because the backend would reject the fake token.) Restart `npm run dev` after changing these.
+| Feature | module2 | Frontend uses |
+| --- | --- | --- |
+| Register, login, current user, logout | Implemented | **Real backend** |
+| Upload meeting, list meetings | Implemented | **Real backend** |
+| Process transcript into speaker sections, get transcript | Implemented | **Real backend** |
+| Get one meeting | Not yet | Looked up from the meeting list. Status comes from the transcript endpoint: 409 means not processed yet. |
+| Delete meeting | Not yet | Delete button hidden |
+| Summary, action items, decisions, chat | Not yet | Computed in the browser from the **real** transcript using keyword matching, not an LLM |
+
+You need module2 running on `BACKEND_URL` with its database migrated (`alembic upgrade head`). A **Demo mode** badge shows in the navbar while the AI features are simulated. Once module2 serves the AI endpoints in the contract below, set `NEXT_PUBLIC_MOCK_AI=false`.
+
+To run the UI with no backend at all, set `NEXT_PUBLIC_MOCK_AUTH=true`. Restart `npm run dev` after changing any of these.
+
+**Transcript format.** module2 requires every non-empty line to be `Speaker: text`. Any other line makes processing fail with a 422 error, which the meeting page shows along with a retry button. The built-in sample transcript uses this format.
 
 ### How it talks to the backend
 
 The browser only calls relative `/api/...` URLs. `next.config.js` rewrites them to `BACKEND_URL`, so the backend needs no CORS setup. All calls are in `lib/api.ts`, and the response types are in `lib/types.ts` (snake_case, matching Pydantic).
 
-Auth uses the bearer token from `POST /api/auth/login`, stored in `localStorage` and sent as `Authorization: Bearer <token>`. Any 401 logs the user out.
+Auth uses the bearer token from `POST /api/auth/login`, stored in `localStorage` and sent as `Authorization: Bearer <token>`. On page load the session is checked with `GET /api/auth/me`. A 401 at any point logs the user out. If the backend can't be reached, signed-in pages show a "Can't reach the server" panel with a retry button instead of logging the user out.
 
-## API contract expected from module2
+## API contract
 
-Auth endpoints are implemented in the backend. The rest is what the frontend expects:
+### Implemented in module2 (used as-is)
 
 | Method | Path | Body | Response |
 | --- | --- | --- | --- |
-| POST | `/api/auth/register` | `{email, password}` | `User {id, email}` (409 if taken) |
+| POST | `/api/auth/register` | `{email, password}` | `{id, email}` (409 if taken) |
 | POST | `/api/auth/login` | `{email, password}` | `{access_token, token_type, expires_at}` |
-| GET | `/api/auth/me` | – | `User` |
+| GET | `/api/auth/me` | – | `{id, email}` |
 | POST | `/api/auth/logout` | – | 204 |
-| GET | `/api/meetings` | – | `Meeting[]` (current user's only) |
-| POST | `/api/meetings` | `{title, description?}` | `Meeting` (status `uploaded`) |
-| GET | `/api/meetings/{id}` | – | `Meeting` |
-| DELETE | `/api/meetings/{id}` | – | 204 |
-| POST | `/api/meetings/{id}/transcript` | multipart, field `file` | `Transcript` |
-| GET | `/api/meetings/{id}/transcript` | – | `Transcript {meeting_id, file_name, raw_text, created_at}` |
-| POST | `/api/meetings/{id}/process` | – | `Meeting` (status `processing`) |
-| GET | `/api/meetings/{id}/summary` | – | `{summary, key_points[], topics?[]}` |
-| GET | `/api/meetings/{id}/action-items` | – | `[{id, task, assignee?, deadline?, status?, evidence?, timestamp?}]` |
-| GET | `/api/meetings/{id}/decisions` | – | `[{id, decision, evidence?, timestamp?}]` |
-| POST | `/api/meetings/{id}/chat` | `{question}` | `{answer, citations: [{chunk_id, start_time?, end_time?, speaker?, text}]}` |
+| GET | `/api/meetings` | – | `[{id, title, created_at}]` (current user's only) |
+| POST | `/api/meetings/upload` | multipart: `title`, `file` (`.txt`/`.pdf`/`.docx`, ≤ 10 MB) | `{id, title, created_at}` |
+| POST | `/api/meetings/{id}/transcript/process` | – | `{meeting_id, title, sections: [{section_id, speaker_id, speaker_name, text}]}` (422 on bad format) |
+| GET | `/api/meetings/{id}/transcript` | – | same as above (409 until processed) |
 
-`Meeting` = `{id, title, description?, status: "uploaded" | "processing" | "completed" | "failed", created_at, updated_at?, transcript_file_name?, error_message?}`.
+### Still needed from module2 (the frontend is ready for these)
+
+| Method | Path | Response | Notes |
+| --- | --- | --- | --- |
+| GET | `/api/meetings/{id}` | `Meeting` | Lets the page skip the list lookup |
+| DELETE | `/api/meetings/{id}` | 204 | Then set `CAN_DELETE_MEETINGS` in `lib/config.ts` |
+| GET | `/api/meetings/{id}/summary` | `{summary, key_points[], topics?[]}` | |
+| GET | `/api/meetings/{id}/action-items` | `[{id?, task, assignee?, deadline?, status?, evidence?, timestamp?}]` | module3's `{action_items: [...]}` wrapper is also accepted. Missing ids are generated. |
+| GET | `/api/meetings/{id}/decisions` | `[{id?, decision, evidence?, timestamp?}]` | module3's `{decisions: [...]}` wrapper is also accepted |
+| POST | `/api/meetings/{id}/chat` | `{answer, citations: [{chunk_id, start_time?, end_time?, speaker?, text}]}` | Body `{question}` |
+
+An optional `status: "uploaded" | "processing" | "completed" | "failed"` on meetings would also let the list show status badges. If the AI step becomes asynchronous, the meeting page polls `GET /api/meetings/{id}` every 3 s while the status is `processing`.
 
 Notes for the backend and AI teams:
 
-- The meeting page polls `GET /api/meetings/{id}` every 3 s while `status == "processing"`. The summary, action item and decision endpoints are only called once the status is `completed`.
 - Errors should use FastAPI's `{"detail": "..."}` shape, which the UI shows to the user.
-- Accepted upload types are `.txt .md .vtt .srt`, up to 5 MB (`lib/config.ts`).
-- **Citations:** the answer text can include `[1]`, `[2]`… markers that refer to positions in `citations` and render as clickable chips. The UI finds the matching transcript line by `start_time` (e.g. `00:01:23`) or by the citation's `text` appearing in the transcript, so return verbatim transcript text where possible. `evidence`/`timestamp` on action items and decisions are matched the same way.
+- **Citations:** the answer text can include `[1]`, `[2]`… markers that refer to positions in `citations` and render as clickable chips. The UI finds the matching transcript line in this order:
+  1. `chunk_id` equal to a transcript `section_id` (best)
+  2. `start_time`
+  3. the citation's `text` appearing verbatim in the transcript
+
+  `evidence`/`timestamp` on action items and decisions are matched the same way.
 
 ## Structure
 
@@ -89,10 +110,10 @@ components/
   chat/                 ChatWindow, ChatMessage, ChatInput, Citation, CitationList
 lib/
   api.ts                every backend call (switches to mock.ts when mocks are on)
-  mock.ts               in-browser mock backend
+  mock.ts               in-browser mock backend + keyword "AI" (also used on real transcripts)
   types.ts              data contract
   auth.ts               token storage
-  transcript.ts         transcript parser + citation → line matching
+  transcript.ts         transcript parser, module2 sections → display lines, citation matching
 ```
 
 ## Docker
@@ -102,4 +123,4 @@ docker build --build-arg BACKEND_URL=http://backend:8000 -t mia-frontend .
 docker run -p 3000:3000 mia-frontend
 ```
 
-Mocks are **off** by default in the Docker build. To turn them on, pass `--build-arg NEXT_PUBLIC_MOCK_MEETINGS=true`.
+The Docker build uses the same defaults: real auth and meetings, with the AI features computed in the browser. Override them with `--build-arg NEXT_PUBLIC_MOCK_AI=false` and similar.
