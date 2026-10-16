@@ -1,7 +1,0 @@
-Display generated summary.
-
-Potentially:
-
-Executive Summary
-Key Points
-Topics Discussed
