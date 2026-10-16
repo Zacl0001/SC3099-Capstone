@@ -1,6 +1,0 @@
-# Configuration:
-#
-# DATABASE_URL
-# EMBEDDING_MODEL
-# LLM_MODEL
-# LLM_API_KEY

@@ -1,0 +1,80 @@
+{
+    "meeting_id": "meeting-002-rag-planning",
+    "title": "New RAG Feature - Project Kickoff",
+    "meeting_date": "2026-10-12",
+    "meeting_start_time": "10:00:00",
+    "sections": [
+        {
+            "section_id": "section-001",
+            "speaker_name": "Alex",
+            "timestamp": "00:00:05",
+            "text": "Alright, team. The main goal for this quarter is the new meeting search feature. We need a solid plan. Let's start with the core... the vector store."
+        },
+        {
+            "section_id": "section-002",
+            "speaker_name": "Taylor",
+            "timestamp": "00:00:15",
+            "text": "My initial thought is... let's just use an in-memory store to start. Something like FAISS. We can get a prototype up and running super fast, maybe in, uh, two weeks?"
+        },
+        {
+            "section_id": "section-003",
+            "speaker_name": "Jamie",
+            "timestamp": "00:00:28",
+            "text": "Two weeks is tight. And in-memory... it's fast, yeah, but we lose the index every time the server restarts. That's not, you know, sustainable for a real feature."
+        },
+        {
+            "section_id": "section-004",
+            "speaker_name": "Alex",
+            "timestamp": "00:00:40",
+            "text": "Jamie's right. This needs to be persistent from day one. What about a managed service? Like, um, Pinecone or Weaviate? That would handle all the scaling and persistence for us."
+        },
+        {
+            "section_id": "section-005",
+            "speaker_name": "Taylor",
+            "timestamp": "00:00:55",
+            "text": "A managed service adds another component to our stack... and another bill. Plus, we'd have to deal with network latency between our app and their service for every single query."
+        },
+        {
+            "section_id": "section-006",
+            "speaker_name": "Jamie",
+            "timestamp": "00:01:10",
+            "text": "Wait a minute. We already have a... a PostgreSQL database running, right? Why don't we just use pgvector? It's an extension, runs right inside our existing DB. No new service, no extra bill, zero network latency."
+        },
+        {
+            "section_id": "section-007",
+            "speaker_name": "Alex",
+            "timestamp": "00:01:25",
+            "text": "pgvector... I like that. It keeps our architecture simple. Is it, uh, hard to set up?"
+        },
+        {
+            "section_id": "section-008",
+            "speaker_name": "Jamie",
+            "timestamp": "00:01:31",
+            "text": "No, it's super easy. The latest Docker image for Postgres even has it included. It's just... an 'CREATE EXTENSION' command. The only thing is, setting it up and testing the indexing might push that two-week deadline."
+        },
+        {
+            "section_id": "section-009",
+            "speaker_name": "Alex",
+            "timestamp": "00:01:48",
+            "text": "Okay, that's a fair trade-off. Simplicity over speed of initial setup. Let's scrap the two-week idea. What's a realistic target for a backend prototype using pgvector?"
+        },
+        {
+            "section_id": "section-010",
+            "speaker_name": "Jamie",
+            "timestamp": "00:02:02",
+            "text": "I think I can get the, um, ingestion pipeline and the basic query API done in three weeks. That gives me enough time to properly configure pgvector and run some performance tests."
+        },
+        {
+            "section_id": "section-011",
+            "speaker_name": "Morgan",
+            "timestamp": "00:02:15",
+            "text": "Okay, so if the backend API is ready in three weeks, I can have a simple frontend search interface connected to it by the end of week four. That's our full end-to-end flow."
+        },
+        {
+            "section_id": "section-012",
+            "speaker_name": "Alex",
+            "timestamp": "00:02:28",
+            "text": "Perfect. Let's lock that in. So, the decision is made: we're moving forward with pgvector. Jamie, you have three weeks for the backend. Morgan, four weeks for the UI integration. This is a solid plan."
+        }
+    ]
+}
