@@ -1,0 +1,37 @@
+# Purpose: Builds the frontend container.
+#
+# Install dependencies -> copy application -> build Next.js -> run application
+#
+# BACKEND_URL must be passed as a build arg because Next.js compiles the
+# /api proxy rewrite into the build.
+
+FROM node:22-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+
+FROM node:22-alpine AS builder
+WORKDIR /app
+ARG BACKEND_URL=http://backend:8000
+ARG NEXT_PUBLIC_MOCK_AUTH=false
+ARG NEXT_PUBLIC_MOCK_MEETINGS=false
+ARG NEXT_PUBLIC_MOCK_AI=true
+ENV BACKEND_URL=$BACKEND_URL \
+    NEXT_PUBLIC_MOCK_AUTH=$NEXT_PUBLIC_MOCK_AUTH \
+    NEXT_PUBLIC_MOCK_MEETINGS=$NEXT_PUBLIC_MOCK_MEETINGS \
+    NEXT_PUBLIC_MOCK_AI=$NEXT_PUBLIC_MOCK_AI \
+    NEXT_TELEMETRY_DISABLED=1
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+
+FROM node:22-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+EXPOSE 3000
+CMD ["node", "server.js"]
