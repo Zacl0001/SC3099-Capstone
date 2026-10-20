@@ -82,9 +82,9 @@ Infrastructure:
 
 ## Running locally
 
-cp .env.example .env
+For the current Windows/PowerShell backend setup, follow the [backend setup guide](module2-backend/README.md). It covers Docker PostgreSQL, Python dependencies, environment variables, migrations, startup and API testing.
 
-docker compose up --build
+The existing `ToUpdate docker-compose.yml` contains the old template configuration and is not the current setup procedure.
 
 ## Services
 
