@@ -1,4 +1,7 @@
-import config
+if __package__:
+    from . import config
+else:
+    import config
 from llama_index.core.vector_stores import SimpleVectorStore
 from llama_index.vector_stores.postgres import PGVectorStore
 

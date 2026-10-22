@@ -37,18 +37,18 @@ def create_document(meeting_data: dict) -> Document:
     section_metadata = []
 
     for section in meeting_data["sections"]:
-        line = (
-            f"{section['speaker_name']} "
-            f"[{section['timestamp']}]: "
-            f"{section['text']}"
-        )
+        timestamp = section.get("timestamp")
+        header = section["speaker_name"]
+        if timestamp:
+            header += f" [{timestamp}]"
+        line = f"{header}: {section['text']}"
 
         section_start = len("\n".join(lines)) + (1 if lines else 0)
         section_metadata.append(
             {
                 "section_id": section["section_id"],
                 "speaker": section["speaker_name"],
-                "timestamp": section["timestamp"],
+                "timestamp": timestamp,
                 "start": section_start,
                 "end": section_start + len(line),
             }
@@ -61,12 +61,13 @@ def create_document(meeting_data: dict) -> Document:
     )
 
     document = Document(
+        id_=f"meeting:{meeting_data['meeting_id']}",
         text="\n".join(lines),
         metadata={
-            "meeting_id": meeting_data["meeting_id"],
+            "meeting_id": str(meeting_data["meeting_id"]),
             "title": meeting_data["title"],
-            "meeting_date": meeting_data["meeting_date"],
-            "meeting_start_time": meeting_data["meeting_start_time"],
+            "meeting_date": _isoformat(meeting_data.get("meeting_date")),
+            "meeting_start_time": _isoformat(meeting_data.get("meeting_start_time")),
             "speakers": speakers,
             "section_metadata": section_metadata,
         },
@@ -82,6 +83,11 @@ def create_document(meeting_data: dict) -> Document:
     ]
 
     return document
+
+
+def _isoformat(value):
+    """Accept both JSON strings and the backend's date/time objects."""
+    return value.isoformat() if hasattr(value, "isoformat") else value
 
 
 class AttachSectionMetadata(TransformComponent):
@@ -146,10 +152,10 @@ class RestoreSectionHeaders(TransformComponent):
             if node_start == starting_section["start"]:
                 continue
 
-            header = (
-                f"{starting_section['speaker']} "
-                f"[{starting_section['timestamp']}]: "
-            )
+            header = starting_section["speaker"]
+            if starting_section.get("timestamp"):
+                header += f" [{starting_section['timestamp']}]"
+            header += ": "
 
             node.text = header + node.text
 
@@ -158,8 +164,6 @@ class RestoreSectionHeaders(TransformComponent):
 class MeetingIngestor:
     """Ingest meeting transcripts into the configured vector store."""
 
-    ##TODO: Consider document management to avoid duplicate ingestion of the same meeting data.
-    
     def __init__(self, embedding_model, vector_store):
         self.embedding_model = embedding_model
         self.vector_store = vector_store
@@ -173,7 +177,6 @@ class MeetingIngestor:
                 RestoreSectionHeaders(),
                 self.embedding_model,
             ],
-            vector_store=self.vector_store,
         )
 
     def ingest_meetings(self, file_paths: Iterable[str | Path]) -> None:
@@ -185,10 +188,22 @@ class MeetingIngestor:
                 "At least one meeting JSON file is required for ingestion"
             )
 
-        documents = []
-
         for file_path in file_paths:
             meeting_data = load_meeting_json(file_path)
-            documents.append(create_document(meeting_data))
+            self.ingest_transcript(meeting_data)
 
-        self.pipeline.run(documents=documents)
+    def ingest_transcript(self, meeting_data: dict) -> int:
+        """Embed first, then replace this meeting's previously indexed chunks.
+
+        Sequential retries do not accumulate duplicates. Replacement is not a
+        transaction across the vector store and the backend database.
+        """
+        if not meeting_data.get("sections"):
+            raise ValueError("Transcript must contain at least one section")
+        document = create_document(meeting_data)
+        nodes = self.pipeline.run(documents=[document])
+        if not nodes:
+            raise ValueError("Transcript produced no searchable chunks")
+        self.vector_store.delete(document.id_)
+        self.vector_store.add(nodes)
+        return len(nodes)
