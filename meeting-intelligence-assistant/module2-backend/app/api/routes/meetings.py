@@ -6,6 +6,8 @@
 # DELETE /meetings/{id}
 # Responsible for meeting CRUD.
 
+from datetime import date, time
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
@@ -19,7 +21,12 @@ router = APIRouter(prefix="/api/meetings", tags=["Meetings"])
 
 @router.post("/upload", response_model=MeetingResponse, status_code=201)
 def upload_meeting_endpoint(
-    title: str = Form(..., min_length=1, max_length=255), file: UploadFile = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db), 
+    title: str = Form(..., min_length=1, max_length=255),
+    file: UploadFile = File(...),
+    meeting_date: date | None = Form(None),
+    meeting_start_time: time | None = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ): # ... -> required
     title = title.strip()
 
@@ -28,7 +35,14 @@ def upload_meeting_endpoint(
 
 
     try:
-        return upload_meeting(db, current_user.id, title, file)
+        return upload_meeting(
+            db,
+            current_user.id,
+            title,
+            file,
+            meeting_date=meeting_date,
+            meeting_start_time=meeting_start_time,
+        )
 
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -43,3 +57,4 @@ def list_meetings_endpoint(
 ):
 
     return list_meetings(db,current_user.id)
+
