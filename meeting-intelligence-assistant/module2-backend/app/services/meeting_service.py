@@ -9,6 +9,8 @@
 #
 # A user must not be able to access another user's meeting by changing the meeting ID.
 
+from datetime import date, time
+
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.models.meeting import Meeting
@@ -16,14 +18,32 @@ from app.models.transcript import Transcript
 from app.services.file_service import save_transcript_file, STORAGE_ROOT
 from fastapi import UploadFile
 
-def create_meeting(db: Session, user_id: int, title: str) -> Meeting:
-    meeting = Meeting(user_id = user_id, title= title)
+def create_meeting(
+    db: Session,
+    user_id: int,
+    title: str,
+    meeting_date: date | None = None,
+    meeting_start_time: time | None = None,
+) -> Meeting:
+    meeting = Meeting(
+        user_id=user_id,
+        title=title,
+        meeting_date=meeting_date,
+        meeting_start_time=meeting_start_time,
+    )
 
     db.add(meeting)
     db.flush()
     return meeting
 
-def upload_meeting(db: Session, user_id: int, title: str, file: UploadFile) -> Meeting:
+def upload_meeting(
+    db: Session,
+    user_id: int,
+    title: str,
+    file: UploadFile,
+    meeting_date: date | None = None,
+    meeting_start_time: time | None = None,
+) -> Meeting:
     file_name = file.filename or ""
 
     if not file_name or len(file_name) > 255:
@@ -32,7 +52,13 @@ def upload_meeting(db: Session, user_id: int, title: str, file: UploadFile) -> M
     storage_key = save_transcript_file(file)
 
     try:
-        meeting = create_meeting(db, user_id, title)
+        meeting = create_meeting(
+            db,
+            user_id,
+            title,
+            meeting_date=meeting_date,
+            meeting_start_time=meeting_start_time,
+        )
 
         transcript = Transcript(meeting_id=meeting.id, file_name =file_name, storage_key = storage_key, )
 
@@ -53,3 +79,4 @@ def list_meetings(db: Session, user_id: int) -> list[Meeting]: #returns list of 
         select(Meeting).where(Meeting.user_id == user_id).order_by(Meeting.created_at.desc(), Meeting.id.desc()))
 
     return list(db.scalars(statement).all())
+

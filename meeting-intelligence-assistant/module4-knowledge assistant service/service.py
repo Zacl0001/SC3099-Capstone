@@ -4,10 +4,16 @@ from typing import Any
 
 from llama_index.core import VectorStoreIndex
 
-from embedding import get_embedding_model
-from ingestion import MeetingIngestor
-from retriever import MeetingRetriever
-from vector_store import create_vector_store
+if __package__:
+    from .embedding import get_embedding_model
+    from .ingestion import MeetingIngestor
+    from .retriever import MeetingRetriever
+    from .vector_store import create_vector_store
+else:  # Preserve the existing standalone test_kas.py workflow.
+    from embedding import get_embedding_model
+    from ingestion import MeetingIngestor
+    from retriever import MeetingRetriever
+    from vector_store import create_vector_store
 
 
 class KnowledgeAssistant:
@@ -39,4 +45,8 @@ class KnowledgeAssistant:
     def search(self, query: str) -> dict[str, Any]:
         """Search the knowledge base for relevant meeting chunks."""
         return self.retriever.search(query)
+
+    def ingest_transcript(self, meeting: dict[str, Any]) -> int:
+        """Index a processed backend transcript without an intermediate JSON file."""
+        return self.ingestor.ingest_transcript(meeting)
 

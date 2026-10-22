@@ -1,7 +1,11 @@
 from pathlib import Path
 
-from ingestion import find_meeting_files
-from service import KnowledgeAssistant
+if __package__:
+    from .ingestion import find_meeting_files
+    from .service import KnowledgeAssistant
+else:
+    from ingestion import find_meeting_files
+    from service import KnowledgeAssistant
 
 
 def print_results(response: dict) -> None:

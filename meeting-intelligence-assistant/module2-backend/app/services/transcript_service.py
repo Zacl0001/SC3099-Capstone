@@ -1,3 +1,4 @@
+import re
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -6,7 +7,7 @@ from app.models.transcript import Transcript
 from app.services.file_service import extract_transcript_txt
 
 
-def parse_transcript_section(text: str) -> list[dict[str,str]]:
+def parse_transcript_section(text: str) -> list[dict[str, str | None]]:
     sections = []
     speaker_ids = {}
 
@@ -15,6 +16,15 @@ def parse_transcript_section(text: str) -> list[dict[str,str]]:
 
         if not line: #skip empty lines
             continue
+
+        timestamp = None
+        timestamp_match = re.match(
+            r"^\[(?P<timestamp>\d{1,3}:[0-5]\d:[0-5]\d)\]\s*(?P<content>.+)$",
+            line,
+        )
+        if timestamp_match:
+            timestamp = timestamp_match.group("timestamp")
+            line = timestamp_match.group("content")
 
         speaker_name, separator, spoken_text = line.partition(":")
         speaker_name = speaker_name.strip()
@@ -31,6 +41,7 @@ def parse_transcript_section(text: str) -> list[dict[str,str]]:
             "section_id": f"section {len(sections) + 1:03d}",
             "speaker_id": speaker_ids[speaker_name],
             "speaker_name": speaker_name,
+            "timestamp": timestamp,
             "text": spoken_text,
 
         })
@@ -73,6 +84,8 @@ def process_transcript(db: Session, meeting_id: int, user_id: int,
     return{
         "meeting_id" : meeting.id,
         "title": meeting.title,
+        "meeting_date": meeting.meeting_date,
+        "meeting_start_time": meeting.meeting_start_time,
         "sections": sections,
     }
 
@@ -105,8 +118,11 @@ def get_saved_transcript(
     return {
         "meeting_id": meeting.id,
         "title": meeting.title,
+        "meeting_date": meeting.meeting_date,
+        "meeting_start_time": meeting.meeting_start_time,
         "sections": transcript.sections,
     }
 
 
     
+
