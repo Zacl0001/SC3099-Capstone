@@ -34,7 +34,7 @@ On later sessions just run `docker start meeting-db`.
 
 ```powershell
 py -3.13 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r .\meeting-intelligence-assistant\module2-backend\requirements-dev.txt
+.\.venv\Scripts\python.exe -m pip install -r .\meeting-intelligence-assistant\module2-backend\requirements.txt
 Copy-Item .\meeting-intelligence-assistant\.env.example .\meeting-intelligence-assistant\module2-backend\.env
 ```
 
@@ -49,8 +49,6 @@ Apply migrations from `module2-backend`:
 ```powershell
 ..\..\.venv\Scripts\python.exe -m alembic upgrade head
 ```
-
-`requirements-dev.txt` adds `pytest` on top of the backend runtime requirements.
 
 ### 3. AI service (module3)
 
@@ -203,7 +201,7 @@ KAS/AI Swagger UIs: <http://localhost:8002/docs>, <http://localhost:8001/docs>.
 
 ```powershell
 cd .\meeting-intelligence-assistant
-.\scripts\test-all.ps1              # T0 + T1 + module4 import check
+.\scripts\test-all.ps1              # Static + offline + module4 import check
 .\scripts\test-all.ps1 -Live        # adds KAS acceptance + module3 smoke + live
 .\scripts\test-all.ps1 -Live -FullLive   # live tier at the real 20k threshold
 ```
