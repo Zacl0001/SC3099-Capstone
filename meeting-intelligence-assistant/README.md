@@ -82,7 +82,21 @@ Infrastructure:
 
 ## Running locally
 
-For the current Windows/PowerShell backend setup, follow the [backend setup guide](module2-backend/README.md). It covers Docker PostgreSQL, Python dependencies, environment variables, migrations, startup and API testing.
+Full setup and testing instructions are in the [testing guide](docs/testing-guide.md). Short version (Windows / PowerShell):
+
+1. Start Docker Desktop, then `docker start meeting-db`.
+2. Start Ollama with `qwen2.5:7b-instruct` and `nomic-embed-text`.
+3. Knowledge service: `module4-knowledge assistant service` -> `.\.venv\Scripts\python.exe -m uvicorn app:app --port 8002`
+4. AI service: `module3-AI processing service` -> `.\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8001`
+5. Backend: follow the [backend setup guide](module2-backend/README.md) (root `.venv`, `.env`, `alembic upgrade head`, then `uvicorn app.main:app --port 8000`).
+6. Frontend: `module1-frontend` -> `npm install`, `npm run dev`.
+
+Or start everything at once:
+
+```powershell
+.\scripts\start-all.ps1
+.\scripts\stop-all.ps1
+```
 
 The existing `ToUpdate docker-compose.yml` contains the old template configuration and is not the current setup procedure.
 
@@ -92,3 +106,14 @@ Frontend: http://localhost:3000
 Backend: http://localhost:8000
 AI Service: http://localhost:8001
 Knowledge Service: http://localhost:8002
+
+## Testing
+
+Run the application-wide suite from this folder:
+
+```powershell
+.\scripts\test-all.ps1          # static + offline tests
+.\scripts\test-all.ps1 -Live    # adds KAS acceptance + live AI integration
+```
+
+Per-module commands, tiers and troubleshooting are documented in the [testing guide](docs/testing-guide.md).

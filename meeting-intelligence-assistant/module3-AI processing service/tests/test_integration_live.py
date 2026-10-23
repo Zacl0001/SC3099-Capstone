@@ -1,15 +1,21 @@
 """Live integration tests: module3 -> KAS HTTP API -> pgvector -> Ollama.
 
 Skipped unless INTEGRATION=1. Preconditions (all must be running):
-  1. Postgres with pgvector: ``docker compose up -d`` in the KAS folder (:5433)
-  2. KAS HTTP API on :8002 
+  1. Postgres with pgvector: ``docker start meeting-db`` (:5432, see
+     module2-backend/README.md)
+  2. KAS HTTP API on :8002 - run ``uvicorn app:app --port 8002`` in the
+     ``module4-knowledge assistant service`` folder
   3. Ollama with qwen2.5:7b-instruct + nomic-embed-text
 
 These tests use the REAL dependency wiring (no FakeLLM/FakeKasClient) and
-therefore make real HTTP calls. Runtime is minutes: each /chat call runs a
-~1-2 min CPU LLM generation and the long-transcript test takes ~10 minutes.
+therefore make real HTTP calls. Runtime depends on the chunk threshold: the
+conductor runs the long-transcript test with CHUNK_THRESHOLD_CHARS=4000 by
+default (~5-10 min); a direct run uses the production 20,000 default.
 
-Run:  set INTEGRATION=1 && python -m pytest tests/test_integration_live.py -v
+Run (PowerShell):
+    $env:INTEGRATION='1'; python -m pytest tests/test_integration_live.py -v
+Or through the conductor (checks prerequisites first):
+    python run_tests.py --tier live
 """
 
 import json
@@ -36,12 +42,27 @@ _MEETING_FILE = (
     / "sample_meeting1.json"
 )
 
-# Over the 20k chunk threshold, so /summarize must use the /chunk map path.
+# The conductor lowers this via CHUNK_THRESHOLD_CHARS to keep runs practical.
+CHUNK_THRESHOLD = int(os.getenv("CHUNK_THRESHOLD_CHARS", "20000"))
+
 _LONG_LINE = (
     "Speaker {i} [{h:02d}:{m:02d}:00]: Okay, next point - about the deployment, "
     "the database connection pooling, and the timeline for the pgvector rollout, "
     "plus who owns the frontend search UI next week.\n"
 )
+
+
+def _build_long_transcript() -> str:
+    """A transcript just over the configured chunk threshold."""
+    lines: list[str] = []
+    length = 0
+    index = 0
+    while length <= CHUNK_THRESHOLD + 500:
+        line = _LONG_LINE.format(i=index, h=index // 60, m=index % 60)
+        lines.append(line)
+        length += len(line)
+        index += 1
+    return "".join(lines)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -94,10 +115,8 @@ def test_chat_unknown_meeting_skips_llm(live_client):
 
 
 def test_long_summarize_uses_chunk_map_path(live_client):
-    transcript = "".join(
-        _LONG_LINE.format(i=i, h=i // 60, m=i % 60) for i in range(120)
-    )
-    assert len(transcript) > 20000
+    transcript = _build_long_transcript()
+    assert len(transcript) > CHUNK_THRESHOLD
 
     response = live_client.post(
         "/summarize",

@@ -1,9 +1,9 @@
 """Live smoke test for module3: short LLM analyses + real KAS chunk legs.
 
-Run standalone:
-    python smoke_test.py
-Or through the conductor:
+Run from the module root (recommended, checks nothing else):
     python run_tests.py --tier smoke
+Run standalone:
+    $env:PYTHONPATH='.'; python tests/smoke_test.py
 
 What it covers (cheap live checks only, ~2-4 minutes):
   1. preflight  - Ollama reachable and the configured model is pulled
@@ -35,8 +35,6 @@ from app.services import (
 from app.services.chunked_extraction import chunk_analysis_input
 from app.services.kas_client import KASClient
 from app.services.llm_service import LLMService
-
-CHUNK_THRESHOLD_CHARS = 20_000
 
 BASE_TRANSCRIPT = """
 Alice: Let's talk about the Q3 release timeline.
@@ -252,7 +250,8 @@ async def run_chunk_legs(kas: KASClient, results: Results) -> None:
         results.failed("chunk:/chunk", "at least one chunk was empty")
 
     print("\n-- Chunk leg: >20k gate via chunk_analysis_input --")
-    long_transcript = build_large_transcript(CHUNK_THRESHOLD_CHARS + 1)
+    threshold = get_settings().chunk_threshold_chars
+    long_transcript = build_large_transcript(threshold + 1)
     print(f"  transcript chars: {len(long_transcript):,}")
     try:
         pieces = await chunk_analysis_input(
