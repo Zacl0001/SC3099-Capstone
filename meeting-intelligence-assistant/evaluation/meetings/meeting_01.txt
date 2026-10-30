@@ -1,0 +1,12 @@
+[00:00:02] Maya: Morning. This meeting decides whether the mobile beta ships on the 12th of December.
+[00:00:11] Daniel: QA found one blocker: crash reports on Android 14 during video upload.
+[00:00:23] Priya: I do not think that is a blocker. It happens in under one percent of sessions.
+[00:00:31] Maya: Even so, a visible crash in the demo is a risk. Daniel, how long would the fix take?
+[00:00:38] Daniel: Four days if I work on it full time.
+[00:00:44] Maya: Then we delay the beta to the 19th of December and keep the 12th as the internal milestone.
+[00:00:53] Priya: Fine, but marketing already announced the 12th.
+[00:01:01] Maya: Decision: the beta goes out on 19 December. Marketing moves the announcement by one week.
+[00:01:12] Daniel: I will fix the Android 14 crash by the 16th and add a regression test.
+[00:01:21] Priya: I will update the announcement and brief the sales team by Friday.
+[00:01:30] Maya: I will tell the sponsor and update the risk register today.
+[00:01:40] Maya: To recap: beta on 19 December, crash fixed by 16 December, announcements moved, risk register updated.

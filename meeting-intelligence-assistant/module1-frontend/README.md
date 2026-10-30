@@ -33,7 +33,7 @@ Other scripts: `npm run build`, `npm start`, `npm run lint`, `npm run typecheck`
 | `BACKEND_URL` | `http://localhost:8000` | Where `/api/*` is proxied (module2). Read at **build** time. |
 | `NEXT_PUBLIC_MOCK_AUTH` | `false` | Fake accounts in the browser. Turns the two below on as well. |
 | `NEXT_PUBLIC_MOCK_MEETINGS` | `false` | Fake meetings and transcripts in the browser. Turns `MOCK_AI` on as well. |
-| `NEXT_PUBLIC_MOCK_AI` | `true` | Compute summary, action items, decisions and chat in the browser from the transcript |
+| `NEXT_PUBLIC_MOCK_AI` | `false` | Compute summary, action items, decisions and chat in the browser from the transcript |
 
 The defaults follow what module2 currently implements:
 
@@ -43,10 +43,10 @@ The defaults follow what module2 currently implements:
 | Upload meeting, list meetings | Implemented | **Real backend** |
 | Process transcript into speaker sections, get transcript | Implemented | **Real backend** |
 | Get one meeting | Not yet | Looked up from the meeting list. Status comes from the transcript endpoint: 409 means not processed yet. |
-| Delete meeting | Not yet | Delete button hidden |
-| Summary, action items, decisions, chat | Not yet | Computed in the browser from the **real** transcript using keyword matching, not an LLM |
+| Delete meeting | Implemented | **Real backend** (also in mock mode) |
+| Summary, action items, decisions, topics, chat | Implemented (proxied to module3 + module4) | **Real backend** |
 
-You need module2 running on `BACKEND_URL` with its database migrated (`alembic upgrade head`). A **Demo mode** badge shows in the navbar while the AI features are simulated. Once module2 serves the AI endpoints in the contract below, set `NEXT_PUBLIC_MOCK_AI=false`.
+You need module2 running on `BACKEND_URL` with its database migrated (`alembic upgrade head`), plus module3 on `:8001` and the knowledge service on `:8002` for the AI views. Set `NEXT_PUBLIC_MOCK_AI=true` to compute the AI views in the browser instead and run without those services; a **Demo mode** badge shows in the navbar while they are simulated.
 
 To run the UI with no backend at all, set `NEXT_PUBLIC_MOCK_AUTH=true`. Restart `npm run dev` after changing any of these.
 
@@ -72,17 +72,19 @@ Auth uses the bearer token from `POST /api/auth/login`, stored in `localStorage`
 | POST | `/api/meetings/upload` | multipart: `title`, `file` (`.txt`/`.pdf`/`.docx`, ≤ 10 MB) | `{id, title, created_at}` |
 | POST | `/api/meetings/{id}/transcript/process` | – | `{meeting_id, title, sections: [{section_id, speaker_id, speaker_name, text}]}` (422 on bad format) |
 | GET | `/api/meetings/{id}/transcript` | – | same as above (409 until processed) |
+| DELETE | `/api/meetings/{id}` | – | 204 (404 when the meeting is not yours) |
+| GET | `/api/meetings/{id}/summary` | `{summary, key_points[], topics?[]}` | Proxied to module3 |
+| GET | `/api/meetings/{id}/action-items` | `{action_items: [{task, assignee?, deadline?, evidence?, timestamp?}]}` | Proxied to module3; missing ids are generated |
+| GET | `/api/meetings/{id}/decisions` | `{decisions: [{decision, evidence?, timestamp?}]}` | Proxied to module3 |
+| GET | `/api/meetings/{id}/topics` | `{topics: [{name, description, importance}]}` | Proxied to module3 |
+| POST | `/api/meetings/{id}/chat` | `{answer, citations: [{chunk_id, start_time?, end_time?, speaker?, text}]}` | Body `{question}`, proxied to module3 + KAS |
+| POST | `/api/meetings/{id}/index` | `{meeting_id, status, chunks}` | Re-ingests the transcript into the vector store |
 
 ### Still needed from module2 (the frontend is ready for these)
 
 | Method | Path | Response | Notes |
 | --- | --- | --- | --- |
 | GET | `/api/meetings/{id}` | `Meeting` | Lets the page skip the list lookup |
-| DELETE | `/api/meetings/{id}` | 204 | Then set `CAN_DELETE_MEETINGS` in `lib/config.ts` |
-| GET | `/api/meetings/{id}/summary` | `{summary, key_points[], topics?[]}` | |
-| GET | `/api/meetings/{id}/action-items` | `[{id?, task, assignee?, deadline?, status?, evidence?, timestamp?}]` | module3's `{action_items: [...]}` wrapper is also accepted. Missing ids are generated. |
-| GET | `/api/meetings/{id}/decisions` | `[{id?, decision, evidence?, timestamp?}]` | module3's `{decisions: [...]}` wrapper is also accepted |
-| POST | `/api/meetings/{id}/chat` | `{answer, citations: [{chunk_id, start_time?, end_time?, speaker?, text}]}` | Body `{question}` |
 
 An optional `status: "uploaded" | "processing" | "completed" | "failed"` on meetings would also let the list show status badges. If the AI step becomes asynchronous, the meeting page polls `GET /api/meetings/{id}` every 3 s while the status is `processing`.
 
@@ -123,4 +125,4 @@ docker build --build-arg BACKEND_URL=http://backend:8000 -t mia-frontend .
 docker run -p 3000:3000 mia-frontend
 ```
 
-The Docker build uses the same defaults: real auth and meetings, with the AI features computed in the browser. Override them with `--build-arg NEXT_PUBLIC_MOCK_AI=false` and similar.
+The Docker build uses the same defaults: real auth, meetings and AI. Override them with `--build-arg NEXT_PUBLIC_MOCK_AI=true` (and similar) to run without the AI/KAS services.

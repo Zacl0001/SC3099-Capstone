@@ -69,8 +69,11 @@ py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Connection settings live in `config.py` and must match the `meeting-db`
-credentials.
+Connection defaults live in `config.py` and match the `meeting-db`
+credentials. Override them with `POSTGRES_HOST`, `POSTGRES_PORT`,
+`POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_TABLE_NAME`,
+`POSTGRES_EMBEDDING_DIM`, `EMBEDDING_MODEL`, and `VECTOR_STORE_TYPE`
+(`postgres` or `simple`).
 
 ### 5. Frontend (module1)
 
@@ -80,8 +83,9 @@ npm install
 Copy-Item .env.example .env.local
 ```
 
-`.env.local` defaults are correct for local development. AI features stay
-mock (`NEXT_PUBLIC_MOCK_AI=true`) until the backend AI routes are wired.
+`.env.local` defaults are correct for local development. AI features call the
+real backend (`NEXT_PUBLIC_MOCK_AI=false`); set it to `true` only if you want to
+run the UI without module3/KAS.
 
 ## Start and stop everything
 
@@ -123,7 +127,7 @@ npm run typecheck
 
 ### Offline unit tests (no services)
 
-Backend (2 tests; auth/meetings/chat suites are still placeholders):
+Backend (8 tests; auth/meetings/chat suites are still placeholders):
 
 ```powershell
 cd .\meeting-intelligence-assistant\module2-backend
@@ -178,6 +182,91 @@ $env:INTEGRATION='1'; $env:CHUNK_THRESHOLD_CHARS='4000'
 .\.venv\Scripts\python.exe -m pytest tests/test_integration_live.py -v
 ```
 
+### End-to-end transcript pipeline (all services running)
+
+One command uploads a transcript, processes it, indexes it for RAG, then calls
+summary, action items, decisions, topics and chat through module2:
+
+```powershell
+cd .\meeting-intelligence-assistant
+.\scripts\test-transcript.ps1                     # uses scripts\sample-transcript.txt
+.\scripts\test-transcript.ps1 -Transcript .\my-meeting.txt -Delete
+```
+
+It prints a PASS/FAIL table and the meeting URL to open in the frontend. The
+script requires Postgres, KAS, module3 and the backend to be listening (start
+them with `start-all.ps1`). Chat is checked for a non-empty, grounded answer
+with at least one citation; pass `-SkipChat` if KAS is intentionally offline.
+
+### AI quality evaluation (all services running)
+
+`evaluation/evaluate.py` scores the AI outputs against hand-written expected
+results, which is the evidence to quote in the report and demo. Each transcript
+in `evaluation/meetings/` is uploaded, processed and indexed, then summary,
+action items, decisions and one RAG question are compared with
+`evaluation/expected/<name>.json`:
+
+```powershell
+cd .\meeting-intelligence-assistant
+..\.venv\Scripts\python.exe evaluation\evaluate.py
+..\.venv\Scripts\python.exe evaluation\evaluate.py --threshold 0.6   # exit 2 below 60%
+..\.venv\Scripts\python.exe evaluation\evaluate.py --delete          # remove the test meetings
+```
+
+Example output:
+
+```
+=============================
+Meeting Intelligence Evaluation
+=============================
+
+Summary
+-------
+Correctness: 87%
+
+Action Items
+------------
+Precision: 80%
+Recall:    80%
+F1:        80%
+
+Decisions
+---------
+Precision: 100%
+Recall:    100%
+F1:        100%
+
+RAG
+---
+Retrieval relevance: 100%
+Citation accuracy:   100%
+Grounded answers:    100%
+```
+
+The three transcripts cover a normal meeting, a sprint planning with many
+actions, and a meeting with conflicting opinions and a deferred decision.
+Expected files use keywords rather than exact wording:
+
+```json
+{
+  "summary_keywords": ["19 December", "Android 14"],
+  "decisions": ["the beta goes out on 19 December"],
+  "action_items": [{ "task": "fix the Android 14 crash", "assignee": "Daniel" }],
+  "qa": [{
+    "question": "When does the beta ship and what must Daniel fix?",
+    "expected_terms": ["19 December", "Android 14"],
+    "citation_times": ["00:01:01", "00:01:12"]
+  }]
+}
+```
+
+Matching is token overlap (case, ordinals and plurals are normalised), so
+paraphrases still score. A generated item may cover several expected decisions
+because recaps often bundle them into one sentence; action items are matched
+one-to-one so a vague catch-all cannot inflate the score. LLM output varies
+slightly between runs, so treat the numbers as a range, not a fixed benchmark.
+`--delete` keeps the database clean once you have inspected any misses.
+
 ### Application-level workflow (manual)
 
 Backend API (services running) - Swagger at <http://localhost:8000/docs>:
@@ -190,10 +279,16 @@ Backend API (services running) - Swagger at <http://localhost:8000/docs>:
 5. `GET /api/meetings`.
 6. `POST /api/meetings/{meeting_id}/transcript/process`.
 7. `GET /api/meetings/{meeting_id}/transcript`.
+8. `DELETE /api/meetings/{meeting_id}` (204; 404 when it is not yours).
+9. AI/RAG endpoints (need module3 on `:8001` and KAS on `:8002`):
+   `GET .../summary`, `.../action-items`, `.../decisions`, `.../topics`,
+   `POST .../chat` with `{"question": "..."}`, and `POST .../index` to
+   (re)ingest the transcript into the vector store.
 
 Frontend (`http://localhost:3000`): register/login, create a meeting from a
 transcript, open it, and verify summary/actions/decisions/chat. These AI views
-come from the browser-side mock until `module2` forwards to module3/module4.
+are proxied to module3 + module4 through module2; answers cite transcript lines
+that link back to the highlighted passage.
 
 KAS/AI Swagger UIs: <http://localhost:8002/docs>, <http://localhost:8001/docs>.
 

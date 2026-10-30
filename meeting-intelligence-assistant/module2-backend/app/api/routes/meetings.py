@@ -15,7 +15,7 @@ from app.api.routes.dependencies import get_current_user
 from app.db.database import get_db
 from app.models.user import User
 from app.schemas.meeting import MeetingResponse
-from app.services.meeting_service import upload_meeting, list_meetings
+from app.services.meeting_service import upload_meeting, list_meetings, delete_meeting
 
 router = APIRouter(prefix="/api/meetings", tags=["Meetings"])
 
@@ -57,4 +57,16 @@ def list_meetings_endpoint(
 ):
 
     return list_meetings(db,current_user.id)
+
+
+@router.delete("/{meeting_id}", status_code=204)
+def delete_meeting_endpoint(
+    meeting_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # A missing meeting and one owned by somebody else both return 404 so the
+    # endpoint does not reveal which ids exist.
+    if not delete_meeting(db, current_user.id, meeting_id):
+        raise HTTPException(status_code=404, detail="meeting not found")
 

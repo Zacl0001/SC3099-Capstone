@@ -39,13 +39,31 @@ function Wait-Port {
     }
 }
 
+# winget/installers update the machine PATH, but already-running terminals keep
+# the old value. Resolve npm explicitly so the launcher works before a reboot.
+function Resolve-Npm {
+    $cmd = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $candidates = @(
+        (Join-Path $env:ProgramFiles 'nodejs\npm.cmd'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\nodejs\npm.cmd')
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+    return $null
+}
+
 function Start-ServiceWindow {
     param(
         [string]$Title,
         [string]$WorkingDirectory,
-        [string]$Command
+        [string]$Command,
+        [string]$PathPrefix = ''
     )
-    $inner = "`$Host.UI.RawUI.WindowTitle = '$Title'; Set-Location -LiteralPath '$WorkingDirectory'; $Command"
+    $inner = "`$Host.UI.RawUI.WindowTitle = '$Title'; Set-Location -LiteralPath '$WorkingDirectory'; "
+    if ($PathPrefix) { $inner += "`$env:PATH = '$PathPrefix;' + `$env:PATH; " }
+    $inner += $Command
     Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoExit', '-Command', $inner -WindowStyle Normal | Out-Null
     Write-Host "Started $Title" -ForegroundColor Green
 }
@@ -63,6 +81,13 @@ if (-not (Test-Path $py3)) { throw "Missing module3 .venv ($py3). See docs/testi
 if (-not (Test-Path $py4)) { throw "Missing module4 .venv ($py4). See docs/testing-guide.md." }
 if (-not $SkipFrontend -and -not (Test-Path (Join-Path $m1 'node_modules'))) {
     throw "Missing module1 node_modules. Run 'npm install' in module1-frontend."
+}
+$npm = $null
+if (-not $SkipFrontend) {
+    $npm = Resolve-Npm
+    if (-not $npm) {
+        throw 'npm not found. Install Node.js LTS (winget install OpenJS.NodeJS.LTS) and reopen the terminal.'
+    }
 }
 
 foreach ($port in 5432, 8000, 8001, 8002, 3000) {
@@ -95,7 +120,7 @@ if (-not (Test-Port 8000)) {
 }
 
 if (-not $SkipFrontend -and -not (Test-Port 3000)) {
-    Start-ServiceWindow -Title 'frontend :3000' -WorkingDirectory $m1 -Command 'npm run dev'
+    Start-ServiceWindow -Title 'frontend :3000' -WorkingDirectory $m1 -Command "& '$npm' run dev" -PathPrefix (Split-Path -Parent $npm)
     Wait-Port -Port 3000 -TimeoutSeconds 120 -Label 'frontend'
 }
 

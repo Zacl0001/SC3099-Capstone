@@ -4,14 +4,23 @@
 # GET /meetings/{id}/transcript
 # Handles uploads and retrieval.
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.api.routes.dependencies import get_current_user
 from app.db.database import get_db
 from app.models.user import User
 from app.schemas.transcript import TranscriptResponse
-from app.services.transcript_service import process_transcript, get_saved_transcript
+from app.services import knowledge_service
+from app.services.knowledge_service import KnowledgeServiceError
+from app.services.transcript_service import (
+    process_transcript,
+    get_saved_transcript,
+    to_kas_meeting,
+)
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/meetings", tags=["Transcripts"])
 
@@ -30,6 +39,15 @@ def process_transcript_endpoint(
 
     if result is None:
         raise HTTPException(status_code=404, detail= "Transcript not found")
+
+    # Index the parsed transcript for RAG. Uploading/processing should still
+    # succeed when KAS is down; POST /api/meetings/{id}/index retries.
+    try:
+        knowledge_service.ingest_transcript(to_kas_meeting(result))
+    except KnowledgeServiceError as exc:
+        logger.warning(
+            "KAS ingestion failed for meeting %s: %s", meeting_id, exc
+        )
 
     return result
 

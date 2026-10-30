@@ -1,0 +1,19 @@
+{
+  "summary_keywords": ["19 December", "Android 14", "crash", "marketing", "risk register"],
+  "decisions": [
+    "the beta goes out on 19 December",
+    "marketing moves the announcement by one week"
+  ],
+  "action_items": [
+    { "task": "fix the Android 14 crash", "assignee": "Daniel" },
+    { "task": "update the announcement and brief the sales team", "assignee": "Priya" },
+    { "task": "tell the sponsor and update the risk register", "assignee": "Maya" }
+  ],
+  "qa": [
+    {
+      "question": "When does the beta ship and what must Daniel fix?",
+      "expected_terms": ["19 December", "Android 14"],
+      "citation_times": ["00:01:01", "00:01:12"]
+    }
+  ]
+}

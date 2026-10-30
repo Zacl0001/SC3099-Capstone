@@ -1,0 +1,15 @@
+[00:00:03] Alex: Thanks everyone for joining. The purpose of this meeting is to decide whether we launch the meeting-intelligence assistant next Monday.
+[00:00:12] Jamie: QA found two blockers. The transcript parser fails on PDF files with scanned pages, and the chat endpoint times out when Ollama is under load.
+[00:00:27] Taylor: I think we should delay the launch by one week. Shipping with a broken PDF path will hurt our demo.
+[00:00:39] Alex: I agree. Let's delay the launch to the following Monday, the 9th of November.
+[00:00:47] Jamie: That works for engineering. I will fix the PDF parser by Wednesday the 4th.
+[00:00:56] Taylor: I'll raise the LLM timeout to 180 seconds and add a retry, and I'll have that done by Thursday.
+[00:01:08] Alex: Good. Decision: launch moves to Monday 9 November, conditional on QA sign-off on Friday the 6th.
+[00:01:21] Jamie: One more thing. We still need someone to write the user guide. Can we assign that?
+[00:01:30] Alex: Priya, can you own the user guide? Please have a draft ready by Friday the 6th as well.
+[00:01:41] Priya: Yes, I'll take the user guide and share a draft by Friday.
+[00:01:50] Taylor: Do we also need to update the risk register? The delay affects the delivery milestone.
+[00:02:01] Alex: Yes. I will update the risk register and notify the sponsor today.
+[00:02:10] Jamie: For the record, I still think we could have shipped on Monday with the PDF issue documented as a known limitation.
+[00:02:20] Alex: Noted, but the decision stands. A broken upload path is too visible in a demo.
+[00:02:29] Alex: To summarise: we delay to 9 November, QA signs off on the 6th, Jamie fixes the parser, Taylor fixes the timeout, Priya writes the user guide, and I update the risk register.

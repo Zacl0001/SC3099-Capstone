@@ -15,14 +15,16 @@
 //   POST   /api/meetings/upload                  multipart title + file -> {id, title, created_at}
 //   POST   /api/meetings/{id}/transcript/process                        -> Transcript (sections)
 //   GET    /api/meetings/{id}/transcript                                -> Transcript (409 until processed)
+//   DELETE /api/meetings/{id}                                           -> 204
+//   GET    /api/meetings/{id}/summary                                   -> Summary
+//   GET    /api/meetings/{id}/action-items                              -> {action_items}
+//   GET    /api/meetings/{id}/decisions                                 -> {decisions}
+//   GET    /api/meetings/{id}/topics                                    -> {topics}
+//   POST   /api/meetings/{id}/chat      {question}                      -> ChatResponse
+//   POST   /api/meetings/{id}/index                                     -> {meeting_id, status, chunks}
 //
-// Not in module2 yet (mocked / worked around until they exist):
+// Not in module2 yet (worked around until it exists):
 //   GET    /api/meetings/{id}                  -> looked up from GET /api/meetings
-//   DELETE /api/meetings/{id}                  -> Delete button hidden
-//   GET    /api/meetings/{id}/summary          -> Summary         } computed in the browser from
-//   GET    /api/meetings/{id}/action-items     -> ActionItem[]    } the real transcript while
-//   GET    /api/meetings/{id}/decisions        -> Decision[]      } NEXT_PUBLIC_MOCK_AI=true
-//   POST   /api/meetings/{id}/chat  {question} -> ChatResponse    }
 
 import { clearToken, getToken, saveToken } from './auth';
 import { MOCK_AI, MOCK_AUTH, MOCK_MEETINGS } from './config';
@@ -269,7 +271,7 @@ export async function uploadMeeting(
 
 export function deleteMeeting(id: Id): Promise<void> {
   if (MOCK_MEETINGS) return mock.deleteMeeting(mockOwner(), id);
-  return Promise.reject(new ApiError('Deleting meetings is not supported by the backend yet.', 501));
+  return request<void>(`/api/meetings/${id}`, { method: 'DELETE' });
 }
 
 // ---------------------------------------------------------------------------

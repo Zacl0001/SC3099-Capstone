@@ -31,6 +31,21 @@ function Test-Port {
     }
 }
 
+# winget/installers update the machine PATH, but already-running terminals keep
+# the old value. Resolve npm explicitly so the runner works before a reboot.
+function Resolve-Npm {
+    $cmd = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $candidates = @(
+        (Join-Path $env:ProgramFiles 'nodejs\npm.cmd'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\nodejs\npm.cmd')
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+    return $null
+}
+
 function Invoke-Step {
     param(
         [string]$Name,
@@ -76,6 +91,14 @@ if (-not (Test-Path $py4)) {
 if (-not (Test-Path (Join-Path $m1 'node_modules'))) {
     $missing += "module1 node_modules missing: cd 'module1-frontend'; npm install"
 }
+$npm = Resolve-Npm
+if (-not $npm) {
+    $missing += 'npm not found: install Node.js LTS (winget install OpenJS.NodeJS.LTS) and reopen the terminal'
+} else {
+    # npm.cmd shells out to `node`; make sure its folder is on PATH even when
+    # this terminal predates the Node install.
+    $env:PATH = "$(Split-Path -Parent $npm);$env:PATH"
+}
 if ($missing.Count -gt 0) {
     Write-Host "Preflight failed:" -ForegroundColor Red
     $missing | ForEach-Object { Write-Host "  - $_" }
@@ -105,11 +128,11 @@ if ($Live) {
 # ---------------------------------------------------------------------------
 
 Invoke-Step -Name 'module1: eslint' -WorkingDirectory $m1 -Action {
-    npm run lint
+    & $npm run lint
 }
 
 Invoke-Step -Name 'module1: typecheck' -WorkingDirectory $m1 -Action {
-    npm run typecheck
+    & $npm run typecheck
 }
 
 Invoke-Step -Name 'module2: pytest' -WorkingDirectory $m2 -Action {

@@ -12,6 +12,7 @@
 from datetime import date, time
 
 from sqlalchemy.orm import Session
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from app.models.meeting import Meeting
 from app.models.transcript import Transcript
@@ -79,4 +80,42 @@ def list_meetings(db: Session, user_id: int) -> list[Meeting]: #returns list of 
         select(Meeting).where(Meeting.user_id == user_id).order_by(Meeting.created_at.desc(), Meeting.id.desc()))
 
     return list(db.scalars(statement).all())
+
+
+def delete_meeting(db: Session, user_id: int, meeting_id: int) -> bool:
+    """Delete a meeting owned by ``user_id``.
+
+    Returns False when the meeting does not exist or belongs to another user
+    (the caller turns both into 404). The stored transcript file is removed
+    after the database commit so a failed delete leaves everything intact.
+    """
+    meeting = db.scalar(
+        select(Meeting).where(Meeting.id == meeting_id, Meeting.user_id == user_id)
+    )
+    if meeting is None:
+        return False
+
+    transcript = db.scalar(
+        select(Transcript).where(Transcript.meeting_id == meeting_id)
+    )
+    storage_key = transcript.storage_key if transcript is not None else None
+
+    try:
+        # Explicit statements guarantee the child row goes before the parent:
+        # there is no ORM relationship, so db.delete() cannot infer the order.
+        db.execute(sa_delete(Transcript).where(Transcript.meeting_id == meeting_id))
+        db.execute(
+            sa_delete(Meeting).where(
+                Meeting.id == meeting_id, Meeting.user_id == user_id
+            )
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    if storage_key:
+        (STORAGE_ROOT / storage_key).unlink(missing_ok=True)
+
+    return True
 

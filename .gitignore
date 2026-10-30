@@ -1,7 +1,25 @@
+# Python environments
 .venv/
+**/.venv/
+venv/
+
+# Python cache
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+
+# Node
+node_modules/
+
+# Environment files
 .env
 .env.*
-.venv*
 !.env.example
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

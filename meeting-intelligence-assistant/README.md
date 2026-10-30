@@ -81,9 +81,21 @@ Infrastructure:
 - Object storage
 
 ## Running locally
+## Prerequisites
 
-Full setup and testing instructions are in the [testing guide](docs/testing-guide.md). Short version (Windows / PowerShell):
+- Python 3.12
+- Node.js LTS
+- Docker Desktop
+- Docker Compose
 
+## Installation
+
+1. Clone the repository.
+2. Run `.\scripts\setup.ps1`.
+3. Configure your `.env` files.
+4. Run `.\scripts\start-all.ps1`.
+
+or start manually:
 1. Start Docker Desktop, then `docker start meeting-db`.
 2. Start Ollama with `qwen2.5:7b-instruct` and `nomic-embed-text`.
 3. Knowledge service: `module4-knowledge assistant service` -> `.\.venv\Scripts\python.exe -m uvicorn app:app --port 8002`
@@ -91,14 +103,7 @@ Full setup and testing instructions are in the [testing guide](docs/testing-guid
 5. Backend: follow the [backend setup guide](module2-backend/README.md) (root `.venv`, `.env`, `alembic upgrade head`, then `uvicorn app.main:app --port 8000`).
 6. Frontend: `module1-frontend` -> `npm install`, `npm run dev`.
 
-Or start everything at once:
-
-```powershell
-.\scripts\start-all.ps1
-.\scripts\stop-all.ps1
-```
-
-The existing `ToUpdate docker-compose.yml` contains the old template configuration and is not the current setup procedure.
+Full setup and testing instructions are in the [testing guide](docs/testing-guide.md). Short version (Windows / PowerShell):
 
 ## Services
 
@@ -117,3 +122,18 @@ Run the application-wide suite from this folder:
 ```
 
 Per-module commands, tiers and troubleshooting are documented in the [testing guide](docs/testing-guide.md).
+
+## Evaluation
+
+With the stack running, score the AI pipeline against the hand-written expected
+results in `evaluation/` (run from this folder):
+
+```powershell
+..\.venv\Scripts\python.exe evaluation\evaluate.py --threshold 0.6
+```
+
+It reports summary correctness, action-item/decision precision, recall and F1,
+plus RAG retrieval, citation and grounding scores. Add `--delete` to remove the
+evaluation meetings afterwards. See
+[AI quality evaluation](docs/testing-guide.md#ai-quality-evaluation-all-services-running)
+for the expected-file format and how matching works.

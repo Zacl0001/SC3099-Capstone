@@ -1,0 +1,14 @@
+[00:00:03] Sam: Sprint planning for the billing migration. We have five tickets and one decision to make.
+[00:00:12] Elena: The retry queue is the risky one. It failed twice in staging last week.
+[00:00:21] Sam: Agreed. We move payment retries to the next sprint and finish the invoice export first.
+[00:00:31] Marcus: That works. The export is already eighty percent done.
+[00:00:39] Elena: I will finish the invoice export and add the missing currency test by Wednesday.
+[00:00:49] Marcus: I will write the migration runbook and dry-run it on staging by Thursday.
+[00:00:58] Sam: Priya, can you review the retry queue design before it moves to the next sprint?
+[00:01:07] Priya: Yes, I will review the retry queue design and post comments by Friday.
+[00:01:16] Sam: I will update the sprint board and tell support about the changed date.
+[00:01:25] Marcus: Do we need a rollback plan for the export?
+[00:01:32] Sam: Good point. Marcus, add a rollback section to the runbook.
+[00:01:40] Marcus: Noted, the runbook will include a rollback section.
+[00:01:48] Sam: Decision recap: retries move to the next sprint, export ships first, runbook needs a rollback section.
+[00:01:58] Elena: One more thing. The currency test needs a new fixture, which I will add as part of the export ticket.

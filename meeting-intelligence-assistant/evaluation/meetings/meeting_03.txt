@@ -1,0 +1,15 @@
+[00:00:04] Ana: We need to decide between a separate search service and extending the monolith.
+[00:00:15] Ben: A separate service doubles the deployment work. I am against it.
+[00:00:24] Chen: I lean the other way. Search load already affects checkout latency.
+[00:00:35] Ana: We do not have enough data. Let us run a spike for two weeks and decide afterwards.
+[00:00:45] Ben: Two weeks is too long. One week.
+[00:00:52] Chen: A week is not enough to measure peak traffic.
+[00:01:03] Ana: Compromise: the spike runs for two weeks but reports an interim result after one week.
+[00:01:14] Ben: I can accept that, though I still think we should postpone the whole question.
+[00:01:23] Chen: I will instrument checkout latency and collect a week of data.
+[00:01:32] Ana: Ben, can you prototype the service boundary at the same time?
+[00:01:40] Ben: Fine, I will sketch the API and estimate the deployment cost.
+[00:01:50] Ana: We will decide at the review on the 14th. No production changes before then.
+[00:01:59] Chen: For the record, I think waiting two weeks costs us more than the deployment work would.
+[00:02:08] Ben: And for the record, I think the spike is a waste of time.
+[00:02:16] Ana: Noted, both positions are recorded. The decision stands: spike first, review on the 14th.

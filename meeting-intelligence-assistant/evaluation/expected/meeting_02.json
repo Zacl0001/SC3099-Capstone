@@ -1,0 +1,22 @@
+{
+  "summary_keywords": ["retry queue", "invoice export", "next sprint", "runbook", "rollback"],
+  "decisions": [
+    "payment retries move to the next sprint",
+    "the invoice export ships first",
+    "the runbook needs a rollback section"
+  ],
+  "action_items": [
+    { "task": "finish the invoice export and add the currency test", "assignee": "Elena" },
+    { "task": "write the migration runbook and dry-run it on staging", "assignee": "Marcus" },
+    { "task": "review the retry queue design", "assignee": "Priya" },
+    { "task": "update the sprint board and tell support", "assignee": "Sam" },
+    { "task": "add a rollback section to the runbook", "assignee": "Marcus" }
+  ],
+  "qa": [
+    {
+      "question": "What was decided about payment retries and what ships first?",
+      "expected_terms": ["next sprint", "invoice export"],
+      "citation_times": ["00:00:21", "00:00:31"]
+    }
+  ]
+}

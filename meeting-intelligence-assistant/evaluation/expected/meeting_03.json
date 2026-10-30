@@ -1,0 +1,18 @@
+{
+  "summary_keywords": ["spike", "two weeks", "search service", "monolith", "14th"],
+  "decisions": [
+    "run a spike for two weeks with an interim result after one week",
+    "decide at the review on the 14th"
+  ],
+  "action_items": [
+    { "task": "instrument checkout latency and collect a week of data", "assignee": "Chen" },
+    { "task": "sketch the API and estimate the deployment cost", "assignee": "Ben" }
+  ],
+  "qa": [
+    {
+      "question": "When will the search architecture decision be made and what happens first?",
+      "expected_terms": ["14th", "spike"],
+      "citation_times": ["00:01:50", "00:00:35"]
+    }
+  ]
+}

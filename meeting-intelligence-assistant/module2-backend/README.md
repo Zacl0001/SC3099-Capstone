@@ -128,6 +128,7 @@ The `/` URL returning 404 is normal: there is no homepage route.
 7. Execute `GET /api/meetings`. Expect the new meeting in your account's list.
 8. Execute `POST /api/meetings/{meeting_id}/transcript/process` using that ID. Expect 200 with parsed sections saved to the database.
 9. Execute `GET /api/meetings/{meeting_id}/transcript`. Expect the saved sections.
+10. Execute `DELETE /api/meetings/{meeting_id}`. Expect 204; repeating it returns 404. The stored transcript row and uploaded file are removed.
 
 POST processing reads the file, parses speaker turns and saves the result. GET retrieves that saved result. This processing endpoint does not generate AI summaries or embeddings.
 
