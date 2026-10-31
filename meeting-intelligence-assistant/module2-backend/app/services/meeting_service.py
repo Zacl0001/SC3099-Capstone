@@ -17,6 +17,8 @@ from sqlalchemy import select
 from app.models.meeting import Meeting
 from app.models.transcript import Transcript
 from app.services.file_service import save_transcript_file, STORAGE_ROOT
+from app.services import knowledge_service
+from app.services.transcript_service import kas_meeting_id
 from fastapi import UploadFile
 
 def create_meeting(
@@ -87,7 +89,9 @@ def delete_meeting(db: Session, user_id: int, meeting_id: int) -> bool:
 
     Returns False when the meeting does not exist or belongs to another user
     (the caller turns both into 404). The stored transcript file is removed
-    after the database commit so a failed delete leaves everything intact.
+    after the database commit. KAS cleanup must succeed before deleting rows.
+    If the database commit fails after cleanup, retry deletion or re-index the
+    retained meeting to restore its chunks.
     """
     meeting = db.scalar(
         select(Meeting).where(Meeting.id == meeting_id, Meeting.user_id == user_id)
@@ -101,6 +105,7 @@ def delete_meeting(db: Session, user_id: int, meeting_id: int) -> bool:
     storage_key = transcript.storage_key if transcript is not None else None
 
     try:
+        knowledge_service.delete_meeting_chunks(kas_meeting_id(meeting_id))
         # Explicit statements guarantee the child row goes before the parent:
         # there is no ORM relationship, so db.delete() cannot infer the order.
         db.execute(sa_delete(Transcript).where(Transcript.meeting_id == meeting_id))

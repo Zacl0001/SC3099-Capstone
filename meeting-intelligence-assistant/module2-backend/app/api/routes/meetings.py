@@ -16,6 +16,7 @@ from app.db.database import get_db
 from app.models.user import User
 from app.schemas.meeting import MeetingResponse
 from app.services.meeting_service import upload_meeting, list_meetings, delete_meeting
+from app.services.knowledge_service import KnowledgeServiceError
 
 router = APIRouter(prefix="/api/meetings", tags=["Meetings"])
 
@@ -67,6 +68,10 @@ def delete_meeting_endpoint(
 ):
     # A missing meeting and one owned by somebody else both return 404 so the
     # endpoint does not reveal which ids exist.
-    if not delete_meeting(db, current_user.id, meeting_id):
+    try:
+        deleted = delete_meeting(db, current_user.id, meeting_id)
+    except KnowledgeServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not deleted:
         raise HTTPException(status_code=404, detail="meeting not found")
 

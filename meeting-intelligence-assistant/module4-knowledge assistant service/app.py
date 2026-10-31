@@ -177,6 +177,32 @@ def ingest(body: IngestRequest) -> dict:
     }
 
 
+@app.delete("/meetings/{meeting_id}")
+def delete_meeting_chunks(meeting_id: str) -> dict:
+    """Remove indexed chunks. Repeated deletion is safe, including after restart."""
+    if state.vector_store is None:
+        raise HTTPException(status_code=503, detail="vector store not ready")
+
+    try:
+        # HTTP ingestion uses the bare id; the standalone ingestor prefixes it.
+        # Delete directly from the store: no in-memory index bookkeeping needed.
+        ids = [meeting_id]
+        # Older backend versions indexed numeric IDs before namespacing them.
+        # Restrict this alias to canonical backend IDs, not arbitrary demo IDs.
+        legacy_id = meeting_id.removeprefix("meeting-")
+        if meeting_id.startswith("meeting-") and legacy_id.isascii() and legacy_id.isdecimal():
+            ids.append(legacy_id)
+        for doc_id in ids:
+            state.vector_store.delete(doc_id)
+            state.vector_store.delete(f"meeting:{doc_id}")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail="chunk deletion failed; retry meeting deletion"
+        ) from exc
+
+    return {"meeting_id": meeting_id, "status": "deleted"}
+
+
 @app.post("/search")
 def search(body: SearchRequest) -> dict:
     """Top-K semantic search scoped to ONE meeting's chunks."""

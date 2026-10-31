@@ -5,6 +5,7 @@ sends already-parsed transcripts and search queries over HTTP.
 """
 
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -42,6 +43,22 @@ def _post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
 def ingest_transcript(meeting: dict[str, Any]) -> dict[str, Any]:
     """POST /ingest. `meeting` must match the KAS IngestRequest shape."""
     return _post("/ingest", meeting)
+
+
+def delete_meeting_chunks(meeting_id: str) -> None:
+    """Delete KAS chunks before removing the backend meeting records."""
+    url = f"{KNOWLEDGE_SERVICE_URL}/meetings/{quote(meeting_id, safe='')}"
+    timeout = httpx.Timeout(KNOWLEDGE_TIMEOUT_SECONDS, connect=10.0)
+    try:
+        response = httpx.delete(url, timeout=timeout)
+    except httpx.HTTPError as exc:
+        raise KnowledgeServiceError(
+            "Could not delete meeting chunks; meeting kept. Please retry."
+        ) from exc
+    if not 200 <= response.status_code < 300:
+        raise KnowledgeServiceError(
+            f"Chunk deletion returned {response.status_code}; meeting kept. Please retry."
+        )
 
 
 def search(meeting_id: str, query: str, top_k: int = 5) -> dict[str, Any]:
