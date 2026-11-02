@@ -1,5 +1,7 @@
 param(
-    [switch]$SkipFrontend
+    [switch]$SkipFrontend,
+    # Use another port when 3000 is taken (e.g. by another Docker container).
+    [int]$FrontendPort = 3000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -90,9 +92,18 @@ if (-not $SkipFrontend) {
     }
 }
 
-foreach ($port in 5432, 8000, 8001, 8002, 3000) {
+foreach ($port in 5432, 8000, 8001, 8002, $FrontendPort) {
     if ((Test-Port $port) -and $port -ne 5432) {
         Write-Host "Warning: port $port is already in use; the service may already be running." -ForegroundColor Yellow
+    }
+}
+
+# A Docker container publishing the frontend port would be mistaken for the
+# frontend, which is then never started.
+if (-not $SkipFrontend) {
+    $holder = docker ps --filter "publish=$FrontendPort" --format '{{.Names}}' 2>$null | Select-Object -First 1
+    if ($holder) {
+        throw "Port $FrontendPort is used by Docker container '$holder'. Stop it (docker stop $holder) or pick another port: .\scripts\start-all.ps1 -FrontendPort 3001"
     }
 }
 
@@ -119,9 +130,9 @@ if (-not (Test-Port 8000)) {
     Wait-Port -Port 8000 -Label 'module2 backend'
 }
 
-if (-not $SkipFrontend -and -not (Test-Port 3000)) {
-    Start-ServiceWindow -Title 'frontend :3000' -WorkingDirectory $m1 -Command "& '$npm' run dev" -PathPrefix (Split-Path -Parent $npm)
-    Wait-Port -Port 3000 -TimeoutSeconds 120 -Label 'frontend'
+if (-not $SkipFrontend -and -not (Test-Port $FrontendPort)) {
+    Start-ServiceWindow -Title "frontend :$FrontendPort" -WorkingDirectory $m1 -Command "`$env:PORT = '$FrontendPort'; & '$npm' run dev" -PathPrefix (Split-Path -Parent $npm)
+    Wait-Port -Port $FrontendPort -TimeoutSeconds 120 -Label 'frontend'
 }
 
 # ---------------------------------------------------------------------------
@@ -133,6 +144,6 @@ Write-Host '  Knowledge service  http://localhost:8002/docs'
 Write-Host '  AI service         http://localhost:8001/docs'
 Write-Host '  Backend            http://localhost:8000/docs'
 if (-not $SkipFrontend) {
-    Write-Host '  Frontend           http://localhost:3000'
+    Write-Host "  Frontend           http://localhost:$FrontendPort"
 }
 Write-Host "`nStop everything with: .\scripts\stop-all.ps1"

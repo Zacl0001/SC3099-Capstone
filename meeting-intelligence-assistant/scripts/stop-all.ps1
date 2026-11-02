@@ -1,5 +1,7 @@
 param(
-    [switch]$KeepDb
+    [switch]$KeepDb,
+    # Match the -FrontendPort given to start-all.ps1.
+    [int]$FrontendPort = 3000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,7 +15,7 @@ function Get-DescendantIds {
     }
 }
 
-foreach ($port in 3000, 8000, 8001, 8002) {
+foreach ($port in $FrontendPort, 8000, 8001, 8002) {
     $connections = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
     foreach ($connection in $connections) {
         $process = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue

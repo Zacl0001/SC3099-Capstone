@@ -11,6 +11,12 @@ const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000'
 
 const nextConfig = {
   output: 'standalone',
+  experimental: {
+    // The /api proxy times out after 30s by default, but summary/action-item
+    // calls run a local LLM and often take 1-2 minutes (module2 allows 240s).
+    // Without this the browser shows "backend service is unavailable".
+    proxyTimeout: 300_000,
+  },
   async rewrites() {
     return [
       {
