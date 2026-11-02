@@ -91,9 +91,11 @@ Infrastructure:
 ## Installation
 
 1. Clone the repository.
-2. Run `.\scripts\setup.ps1`.
+2. Run `.\scripts\setup.ps1` from \meeting-intelligence-assistant
 3. Configure your `.env` files.
-4. Run `.\scripts\start-all.ps1`.
+
+## Start
+Run `.\scripts\start-all.ps1`.
 
 or start manually:
 1. Start Docker Desktop, then `docker start meeting-db`.
@@ -137,3 +139,7 @@ plus RAG retrieval, citation and grounding scores. Add `--delete` to remove the
 evaluation meetings afterwards. See
 [AI quality evaluation](docs/testing-guide.md#ai-quality-evaluation-all-services-running)
 for the expected-file format and how matching works.
+
+## Stop
+Run `.\scripts\stop-all.ps1`.
+
