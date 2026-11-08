@@ -9,7 +9,11 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.api.dependencies import get_kas_client, get_llm_service
+from app.api.dependencies import (
+    get_chat_llm_service,
+    get_kas_client,
+    get_llm_service,
+)
 from app.main import app
 from app.services.exceptions import LLMInvalidResponse
 
@@ -122,6 +126,7 @@ def fake_kas():
 def client(fake_llm, fake_kas):
     """TestClient for the real app, with LLM + KAS dependencies pointed at fakes."""
     app.dependency_overrides[get_llm_service] = lambda: fake_llm
+    app.dependency_overrides[get_chat_llm_service] = lambda: fake_llm
     app.dependency_overrides[get_kas_client] = lambda: fake_kas
     with TestClient(app) as c:
         yield c

@@ -18,7 +18,7 @@
 # Meeting → Actions
 # Meeting → Decisions
 
-from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Time, func
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text, Time, func
 
 from app.db.database import Base
 
@@ -35,6 +35,8 @@ class Meeting(Base):
     )
 
     title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String(50), nullable=False, default="scheduled")
 
     meeting_date = Column(Date, nullable=True)
     meeting_start_time = Column(Time, nullable=True)
@@ -44,3 +46,10 @@ class Meeting(Base):
         server_default=func.now(),
         nullable=False,
     )
+
+    updated_at = Column(
+            DateTime(timezone=True),
+            server_default=func.now(),
+            onupdate=func.now(),
+            nullable=False,
+        )

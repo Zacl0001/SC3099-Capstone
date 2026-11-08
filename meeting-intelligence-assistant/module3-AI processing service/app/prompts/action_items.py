@@ -35,10 +35,14 @@ Return ONLY a single JSON object with EXACTLY this shape:
 }}
 
 Rules:
+- Fill "assignee" with the person stated in the transcript. If the speaker says
+  "I'll" or "I will", the assignee is that speaker. If someone says
+  "Priya, can you..." or "assign this to Priya", the assignee is Priya.
 - "assignee" MUST be null if the transcript does not give a specific person.
   Never guess or infer an assignee.
 - "deadline" MUST be null if no deadline is mentioned.
-- "evidence" must be a real quote from the transcript.
+- "evidence" must be a real quote from the transcript. Include the speaker
+  prefix (for example "Jamie: I'll fix the parser") when you know it.
 - If there are no action items, return {{"action_items": []}}.
 - No text outside the JSON object.
 

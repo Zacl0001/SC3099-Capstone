@@ -23,11 +23,13 @@ QUESTION:
 
 Rules:
 - The context blocks are labelled [1], [2], ... and are your only source.
+  Each block is one speaker turn, with that speaker's timestamp when known.
 - Quote or paraphrase what the speakers actually said, and end every factual
   sentence with the number of the block that supports it, like this:
   "The deployment was postponed to Friday [1]."
 - Use the block numbers that actually support each sentence (they can differ
-  within one answer).
+  within one answer). Cite every supporting turn separately rather than
+  lumping several turns under one number.
 - Only if you have carefully read every block and the answer is truly not
   there, reply with exactly:
   "I could not find this information in the meeting transcript."

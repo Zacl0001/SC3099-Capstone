@@ -134,6 +134,39 @@ finally {
     Pop-Location
 }
 
+# ------------------------------------------------
+# Ollama and AI models
+# ------------------------------------------------
+
+Write-Host "`nChecking Ollama..." -ForegroundColor Cyan
+
+$ollamaCommand = Get-Command ollama -ErrorAction SilentlyContinue
+
+if (-not $ollamaCommand) {
+    Write-Warning "Ollama is not installed. Install it from https://ollama.com/download"
+}
+else {
+    Write-Host "Ollama detected." -ForegroundColor Green
+
+    $models = @(
+        "nomic-embed-text:latest",
+        "qwen2.5:7b-instruct"
+    )
+
+    foreach ($model in $models) {
+        Write-Host "`nChecking model: $model"
+
+        ollama pull $model
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to download Ollama model: $model"
+        }
+
+        Write-Host "$model ready." -ForegroundColor Green
+    }
+}
+
+
 Write-Host "`n========================================" -ForegroundColor Green
 Write-Host "Setup completed successfully!" -ForegroundColor Green
 Write-Host "You can now run .\scripts\start-all.ps1"

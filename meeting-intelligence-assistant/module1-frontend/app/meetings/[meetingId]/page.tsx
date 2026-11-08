@@ -11,6 +11,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ComponentType,
   type ReactNode,
@@ -61,6 +62,9 @@ const TABS: { id: Tab; label: string; icon: ComponentType<SVGProps<SVGSVGElement
 function chatKey(id: string) {
   return `mia.chat.${id}`;
 }
+
+let chatCounter = 0;
+const newChatId = () => `${Date.now()}-${chatCounter++}`;
 
 function loadChat(id: string): ChatMessage[] {
   try {
@@ -114,9 +118,28 @@ function MeetingDetail({ meetingId }: { meetingId: string }) {
     transcriptReady,
   );
   const segments = useMemo(() => (transcript.data ? segmentsOf(transcript.data) : []), [transcript.data]);
-  const summary = useAsync(() => api.getSummary(meetingId), `summary-${meetingId}`, completed);
-  const actionItems = useAsync(() => api.getActionItems(meetingId), `actions-${meetingId}`, completed);
-  const decisions = useAsync(() => api.getDecisions(meetingId), `decisions-${meetingId}`, completed);
+  // Bumped by the Regenerate button. It is part of each loader's key, so the
+  // flag is derived from state (not consumed) and survives React's
+  // double-invoked effects in development. Generation 0 is the cached load.
+  const [analysisGeneration, setAnalysisGeneration] = useState(0);
+  const refresh = analysisGeneration > 0;
+  const summary = useAsync(
+    () => api.getSummary(meetingId, refresh),
+    `summary-${meetingId}-${analysisGeneration}`,
+    completed,
+  );
+  const actionItems = useAsync(
+    () => api.getActionItems(meetingId, refresh),
+    `actions-${meetingId}-${analysisGeneration}`,
+    completed,
+  );
+  const decisions = useAsync(
+    () => api.getDecisions(meetingId, refresh),
+    `decisions-${meetingId}-${analysisGeneration}`,
+    completed,
+  );
+  const regenerating = summary.loading || actionItems.loading || decisions.loading;
+  const regenerate = useCallback(() => setAnalysisGeneration((n) => n + 1), []);
 
   // --- Tabs (kept in the URL so they survive refresh) ---------------------
   const requested = (searchParams.get('tab') as Tab | null) ?? 'overview';
@@ -142,6 +165,50 @@ function MeetingDetail({ meetingId }: { meetingId: string }) {
     }
   }, [meetingId, messages]);
 
+  // Pending state and the draft live here, not in ChatWindow: switching tabs
+  // unmounts that component, and an in-flight answer must not turn the input
+  // back into an idle second send button.
+  const [chatPending, setChatPending] = useState(false);
+  const [chatDraft, setChatDraft] = useState('');
+  const chatSendingRef = useRef(false);
+
+  const sendChat = useCallback(
+    async (question: string) => {
+      const trimmed = question.trim();
+      if (!trimmed || chatSendingRef.current) return;
+
+      chatSendingRef.current = true;
+      setChatPending(true);
+      setChatDraft('');
+      setMessages((prev) => [
+        ...prev,
+        { id: newChatId(), role: 'user', content: trimmed },
+      ]);
+
+      try {
+        const res = await api.askQuestion(meetingId, trimmed);
+        setMessages((prev) => [
+          ...prev,
+          { id: newChatId(), role: 'assistant', content: res.answer, citations: res.citations ?? [] },
+        ]);
+      } catch (err) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: newChatId(),
+            role: 'assistant',
+            content: errorMessage(err, 'Sorry, I could not answer that.'),
+            error: true,
+          },
+        ]);
+      } finally {
+        chatSendingRef.current = false;
+        setChatPending(false);
+      }
+    },
+    [meetingId],
+  );
+
   // --- Jump from a citation / action item / decision to the transcript ----
   const [highlight, setHighlight] = useState<{ id: string | null; nonce: number }>({ id: null, nonce: 0 });
   const [sourceNotFound, setSourceNotFound] = useState(false);
@@ -155,8 +222,17 @@ function MeetingDetail({ meetingId }: { meetingId: string }) {
     [segments, setTab],
   );
   const viewEvidence = useCallback(
-    (item: { id: number | string; evidence?: string | null; timestamp?: string | null }) =>
-      viewSource({ chunk_id: '', text: item.evidence ?? '', start_time: item.timestamp }),
+    (item: {
+      id: number | string;
+      evidence?: string | null;
+      timestamp?: string | null;
+      section_id?: string | null;
+    }) =>
+      viewSource({
+        chunk_id: item.section_id ?? '',
+        text: item.evidence ?? '',
+        start_time: item.timestamp,
+      }),
     [viewSource],
   );
 
@@ -242,12 +318,26 @@ function MeetingDetail({ meetingId }: { meetingId: string }) {
             </div>
             {meeting.description && <p className="mt-2 text-sm text-slate-600">{meeting.description}</p>}
           </div>
-          {CAN_DELETE_MEETINGS && (
-            <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(true)}>
-              <TrashIcon className="size-4" />
-              Delete
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {completed && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={regenerate}
+                loading={regenerating}
+                title="Regenerate the summary, action items and decisions with the AI"
+              >
+                <SparklesIcon className="size-4" />
+                Regenerate
+              </Button>
+            )}
+            {CAN_DELETE_MEETINGS && (
+              <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(true)}>
+                <TrashIcon className="size-4" />
+                Delete
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -344,9 +434,11 @@ function MeetingDetail({ meetingId }: { meetingId: string }) {
 
         {tab === 'chat' && (
           <ChatWindow
-            meetingId={meetingId}
             messages={messages}
-            onMessagesChange={setMessages}
+            pending={chatPending}
+            draft={chatDraft}
+            onDraftChange={setChatDraft}
+            onSend={sendChat}
             onViewCitation={viewSource}
           />
         )}

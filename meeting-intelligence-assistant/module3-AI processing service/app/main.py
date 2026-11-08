@@ -36,6 +36,13 @@ async def lifespan(app: FastAPI):
         max_retries=settings.llm_max_retries,
         temperature=settings.llm_temperature,
     )
+    app.state.chat_llm_service = LLMService(
+        base_url=settings.llm_base_url,
+        model=settings.llm_model,
+        timeout_seconds=settings.llm_chat_timeout_seconds,
+        max_retries=settings.llm_max_retries,
+        temperature=settings.llm_temperature,
+    )
     app.state.kas_client = KASClient(
         base_url=settings.kas_base_url,
         timeout_seconds=settings.kas_timeout_seconds,
@@ -51,6 +58,7 @@ async def lifespan(app: FastAPI):
     yield  # app is now serving requests
 
     await app.state.llm_service.close()
+    await app.state.chat_llm_service.close()
     await app.state.kas_client.close()
     logger.info("AI Processing Service shut down")
 

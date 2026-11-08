@@ -101,6 +101,8 @@ export interface ActionItem {
   status?: 'open' | 'done' | string | null;
   evidence?: string | null;
   timestamp?: string | null;
+  /** Stored transcript section this item was extracted from, when known. */
+  section_id?: string | null;
 }
 
 export interface Decision {
@@ -108,6 +110,8 @@ export interface Decision {
   decision: string;
   evidence?: string | null;
   timestamp?: string | null;
+  /** Stored transcript section this decision was extracted from, when known. */
+  section_id?: string | null;
 }
 
 // ---------------------------------------------------------------------------

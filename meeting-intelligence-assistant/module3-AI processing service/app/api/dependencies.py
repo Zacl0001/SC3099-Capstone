@@ -16,6 +16,16 @@ def get_llm_service(request: Request) -> LLMService:
     return request.app.state.llm_service
 
 
+def get_chat_llm_service(request: Request) -> LLMService:
+    """Return the LLM used by /chat (may be a stronger model than extraction).
+
+    Falls back to the main LLM service when no separate chat model is set.
+    """
+    return getattr(
+        request.app.state, "chat_llm_service", request.app.state.llm_service
+    )
+
+
 def get_kas_client(request: Request) -> KASClient:
     """Return the process-wide KAS client stored on the app at startup."""
     return request.app.state.kas_client

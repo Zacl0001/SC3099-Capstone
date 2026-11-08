@@ -90,11 +90,30 @@ export function parseTranscript(raw: string): TranscriptSegment[] {
   return segments;
 }
 
-function normaliseText(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+const FILLER_WORDS = new Set([
+  'the', 'and', 'that', 'this', 'with', 'for', 'from', 'have', 'will', 'would',
+  'could', 'should', 'you', 'your', 'our', 'are', 'was', 'were', 'been', 'has',
+  'had', 'not', 'but', 'they', 'their', 'them', 'there', 'then', 'than', 'into',
+  'about', 'what', 'when', 'where', 'which', 'who', 'whom', 'how', 'why', 'can',
+  'may', 'might', 'must', 'shall', 'just', 'also', 'only', 'some', 'any', 'all',
+]);
+
+/** Meaningful words in a quote, ignoring the "Speaker:" prefix and filler. */
+function citationTokens(text: string): string[] {
+  const body = text.replace(/^[A-Z][\w .'-]{0,39}:\s*/, '');
+  const tokens = body.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  return [...new Set(tokens.filter((t) => t.length > 2 && !FILLER_WORDS.has(t)))];
 }
 
-/** Best-effort lookup of the transcript segment a citation refers to. */
+/**
+ * Best-effort lookup of the transcript segment a citation refers to.
+ *
+ * Exact section ids win, then text similarity (with a timestamp tie-breaker),
+ * then a matching timestamp alone. The text fallback scores token overlap
+ * rather than matching an arbitrary 60-character substring: a quote that only
+ * shares one generic word must not send the reader to an unrelated part of the
+ * transcript, so it returns undefined instead.
+ */
 export function findSegmentForCitation(
   segments: TranscriptSegment[],
   citation: Citation,
@@ -102,18 +121,41 @@ export function findSegmentForCitation(
   const byId = segments.find((s) => s.id === citation.chunk_id);
   if (byId) return byId;
 
-  if (citation.start_time) {
-    const t = normaliseTime(citation.start_time);
-    const byTime = segments.find((s) => s.start_time === t);
-    if (byTime) return byTime;
+  const startTime = citation.start_time ? normaliseTime(citation.start_time) : undefined;
+  const needle = citationTokens(citation.text);
+
+  let best: TranscriptSegment | undefined;
+  let bestScore = 0;
+  for (const segment of segments) {
+    const hay = new Set(citationTokens(segment.text));
+    if (hay.size === 0) continue;
+
+    const overlap = needle.reduce((count, token) => count + (hay.has(token) ? 1 : 0), 0);
+    if (overlap < 2) continue;
+
+    const coverage = overlap / needle.length;
+    if (coverage < 0.5) continue;
+
+    // A matching timestamp is a tie-breaker, not proof: the model can quote
+    // the right passage while naming the wrong time.
+    const score =
+      coverage +
+      (overlap / hay.size) * 0.05 +
+      (startTime && normaliseTime(segment.start_time ?? '') === startTime ? 0.1 : 0);
+    if (score > bestScore) {
+      best = segment;
+      bestScore = score;
+    }
   }
 
-  const needle = normaliseText(citation.text).slice(0, 60);
-  if (!needle) return undefined;
-  return segments.find((s) => {
-    const hay = normaliseText(s.text);
-    return hay.length > 0 && (hay.includes(needle) || needle.includes(hay.slice(0, 60)));
-  });
+  if (best) return best;
+
+  // No usable text: fall back to the timestamp if it exists.
+  if (startTime) {
+    return segments.find((s) => normaliseTime(s.start_time ?? '') === startTime);
+  }
+
+  return undefined;
 }
 
 /** Segments for display: module2's parsed sections when present, else parse the raw text. */

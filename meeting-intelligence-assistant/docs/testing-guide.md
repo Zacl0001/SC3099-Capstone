@@ -14,8 +14,8 @@ running the application-wide suite on Windows / PowerShell.
 | PostgreSQL (pgvector) | Docker container `meeting-db` | 5432 | `docker start meeting-db` |
 | Ollama | host service | 11434 | Ollama app |
 
-Required models: `qwen2.5:7b-instruct` and `nomic-embed-text`
-(`ollama pull <model>`).
+Required models: `qwen2.5:7b-instruct` (summary/actions/decisions/topics and
+chat) and `nomic-embed-text` (`ollama pull <model>`).
 
 ## One-time setup
 
@@ -60,6 +60,7 @@ py -3.13 -m venv .venv
 
 Defaults already point at Ollama (`http://localhost:11434/v1`) and KAS
 (`http://localhost:8002`). A `.env` is optional; see `.env.example`.
+`LLM_MODEL` is the single model used by every endpoint, including `/chat`.
 
 ### 4. Knowledge service (module4)
 
@@ -197,6 +198,25 @@ It prints a PASS/FAIL table and the meeting URL to open in the frontend. The
 script requires Postgres, KAS, module3 and the backend to be listening (start
 them with `start-all.ps1`). Chat is checked for a non-empty, grounded answer
 with at least one citation; pass `-SkipChat` if KAS is intentionally offline.
+
+### AI result caching
+
+Summary, action items, decisions and topics are cached per meeting in the
+`analysis_results` table, so reloading a meeting does not re-run the LLM. A row
+stores the module3 response and a hash of the transcript it was generated from;
+editing or re-processing the transcript invalidates the row automatically.
+
+- First request for a meeting/kind runs the LLM (tens of seconds on CPU).
+- Later requests return the stored payload in milliseconds.
+- `GET /api/meetings/{id}/summary?refresh=true` (also `action-items`,
+  `decisions`, `topics`) regenerates and replaces the row. The frontend's
+  **Regenerate** button uses this once per click.
+- Bump `CACHE_VERSION` in `module2-backend/app/services/analysis_cache.py` when
+  prompts or response schemas change, so stale payloads are not reused.
+
+`start-all.ps1` does not run migrations; after pulling schema changes run
+`alembic upgrade head` from `module2-backend` (the cache table is migration
+`c1a2b3d4e5f6`).
 
 ### AI quality evaluation (all services running)
 

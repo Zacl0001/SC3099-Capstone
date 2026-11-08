@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://localhost:11434/v1"
     llm_model: str = "qwen2.5:7b-instruct"
 
+    # One model serves every endpoint (extraction and /chat) so citation
+    # formatting and extracted facts stay consistent.
+    # Chat answers are longer and can need more time than extraction.
+    llm_chat_timeout_seconds: float = 240.0
+
     # Time in seconds to wait for the LLM to respond.
     # 180s: the capstone box is CPU-only and qwen2.5:7b can need >1min per
     # generation (60s caused live /chat failures; retries x3 compounded it).

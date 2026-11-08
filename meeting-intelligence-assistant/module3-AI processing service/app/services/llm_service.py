@@ -56,8 +56,10 @@ class LLMService:
         self.max_retries = max_retries
         self.temperature = temperature
         # httpx.AsyncClient pools connections and is reused across requests.
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(timeout_seconds))
-
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(timeout_seconds),
+            trust_env=False,
+        )
     async def close(self) -> None:
         """Release the underlying HTTP connection pool."""
         await self._client.aclose()

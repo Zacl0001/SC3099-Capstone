@@ -308,22 +308,29 @@ function listOf<T extends { id?: number | string }>(body: unknown, key: string):
   return items.map((item, i) => ({ ...item, id: item.id ?? i + 1 }));
 }
 
-export async function getSummary(id: Id): Promise<Summary> {
+// `refresh` bypasses the backend's database cache and regenerates with the LLM.
+export async function getSummary(id: Id, refresh = false): Promise<Summary> {
   if (MOCK_MEETINGS) return mock.getSummary(mockOwner(), id);
   if (MOCK_AI) return (await liveAnalysis(id)).summary;
-  return request<Summary>(`/api/meetings/${id}/summary`);
+  return request<Summary>(`/api/meetings/${id}/summary${refresh ? '?refresh=true' : ''}`);
 }
 
-export async function getActionItems(id: Id): Promise<ActionItem[]> {
+export async function getActionItems(id: Id, refresh = false): Promise<ActionItem[]> {
   if (MOCK_MEETINGS) return mock.getActionItems(mockOwner(), id);
   if (MOCK_AI) return (await liveAnalysis(id)).action_items;
-  return listOf<ActionItem>(await request<unknown>(`/api/meetings/${id}/action-items`), 'action_items');
+  return listOf<ActionItem>(
+    await request<unknown>(`/api/meetings/${id}/action-items${refresh ? '?refresh=true' : ''}`),
+    'action_items',
+  );
 }
 
-export async function getDecisions(id: Id): Promise<Decision[]> {
+export async function getDecisions(id: Id, refresh = false): Promise<Decision[]> {
   if (MOCK_MEETINGS) return mock.getDecisions(mockOwner(), id);
   if (MOCK_AI) return (await liveAnalysis(id)).decisions;
-  return listOf<Decision>(await request<unknown>(`/api/meetings/${id}/decisions`), 'decisions');
+  return listOf<Decision>(
+    await request<unknown>(`/api/meetings/${id}/decisions${refresh ? '?refresh=true' : ''}`),
+    'decisions',
+  );
 }
 
 // ---------------------------------------------------------------------------

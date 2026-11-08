@@ -1,11 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { ChatIcon } from '@/components/common/Icons';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
-import * as api from '@/lib/api';
 import { MOCK_AI } from '@/lib/config';
-import { errorMessage } from '@/lib/errors';
 import type { ChatMessage as ChatMessageType, Citation } from '@/lib/types';
 import ChatInput from './ChatInput';
 import ChatMessage from './ChatMessage';
@@ -18,41 +16,27 @@ const SUGGESTIONS = [
 ];
 
 interface ChatWindowProps {
-  meetingId: number | string;
   messages: ChatMessageType[];
-  onMessagesChange: (update: (prev: ChatMessageType[]) => ChatMessageType[]) => void;
+  pending: boolean;
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onSend: (question: string) => void;
   onViewCitation?: (citation: Citation) => void;
 }
 
-let counter = 0;
-const newId = () => `${Date.now()}-${counter++}`;
-
-export default function ChatWindow({ meetingId, messages, onMessagesChange, onViewCitation }: ChatWindowProps) {
-  const [pending, setPending] = useState(false);
+export default function ChatWindow({
+  messages,
+  pending,
+  draft,
+  onDraftChange,
+  onSend,
+  onViewCitation,
+}: ChatWindowProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [messages.length, pending]);
-
-  async function send(question: string) {
-    onMessagesChange((prev) => [...prev, { id: newId(), role: 'user', content: question }]);
-    setPending(true);
-    try {
-      const res = await api.askQuestion(meetingId, question);
-      onMessagesChange((prev) => [
-        ...prev,
-        { id: newId(), role: 'assistant', content: res.answer, citations: res.citations ?? [] },
-      ]);
-    } catch (err) {
-      onMessagesChange((prev) => [
-        ...prev,
-        { id: newId(), role: 'assistant', content: errorMessage(err, 'Sorry, I could not answer that.'), error: true },
-      ]);
-    } finally {
-      setPending(false);
-    }
-  }
 
   return (
     <div className="flex h-[min(70vh,680px)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-sm">
@@ -69,9 +53,9 @@ export default function ChatWindow({ meetingId, messages, onMessagesChange, onVi
                 <button
                   key={s}
                   type="button"
-                  onClick={() => send(s)}
+                  onClick={() => onSend(s)}
                   disabled={pending}
-                  className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
+                  className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {s}
                 </button>
@@ -91,7 +75,7 @@ export default function ChatWindow({ meetingId, messages, onMessagesChange, onVi
         )}
         <div ref={bottomRef} />
       </div>
-      <ChatInput onSend={send} disabled={pending} />
+      <ChatInput value={draft} onChange={onDraftChange} onSend={onSend} disabled={pending} />
     </div>
   );
 }

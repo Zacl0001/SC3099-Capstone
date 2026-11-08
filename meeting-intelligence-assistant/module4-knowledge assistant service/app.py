@@ -81,33 +81,51 @@ state = AppState()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    print("[STARTUP] Initializing embedding model...")
     state.embedding_model = get_embedding_model()
+    print("[STARTUP] Embedding model initialized")
+
+    print("[STARTUP] Initializing vector store...")
     state.vector_store = create_vector_store()
+    print("[STARTUP] Vector store initialized")
+
+    print("[STARTUP] Creating vector index...")
     state.index = VectorStoreIndex.from_vector_store(
-        state.vector_store, embed_model=state.embedding_model
+        state.vector_store,
+        embed_model=state.embedding_model,
     )
-    # Same transformation list as MeetingIngestor: split, attribute, embed, store.
+    print("[STARTUP] Vector index initialized")
+
+    print("[STARTUP] Creating ingestion pipeline...")
     state.ingest_pipeline = IngestionPipeline(
         transformations=[
-            SemanticSplitterNodeParser(embed_model=state.embedding_model),
+            SemanticSplitterNodeParser(
+                embed_model=state.embedding_model
+            ),
             AttachSectionMetadata(),
             RestoreSectionHeaders(),
             state.embedding_model,
         ],
         vector_store=state.vector_store,
     )
-    # Same, minus embedding/storing: /chunk splits without indexing anything.
+
+    print("[STARTUP] Creating chunk pipeline...")
     state.chunk_pipeline = IngestionPipeline(
         transformations=[
-            SemanticSplitterNodeParser(embed_model=state.embedding_model),
+            SemanticSplitterNodeParser(
+                embed_model=state.embedding_model
+            ),
             AttachSectionMetadata(),
             RestoreSectionHeaders(),
         ],
     )
+
+    print("[STARTUP] KAS ready")
+
     yield
-    await state.embedding_model.aclose() if hasattr(
-        state.embedding_model, "aclose"
-    ) else None
+
+    if hasattr(state.embedding_model, "aclose"):
+        await state.embedding_model.aclose()
 
 
 app = FastAPI(title="Knowledge Assistant Service", lifespan=lifespan)
@@ -150,7 +168,24 @@ def _run_pipeline(pipeline: IngestionPipeline, **kwargs) -> list:
 @app.get("/health")
 @app.post("/health")
 def health() -> dict:
-    return {"status": "healthy", "model": config.EMBEDDING_MODEL}
+    ready = all([
+        state.embedding_model is not None,
+        state.vector_store is not None,
+        state.index is not None,
+        state.ingest_pipeline is not None,
+        state.chunk_pipeline is not None,
+    ])
+
+    if not ready:
+        raise HTTPException(
+            status_code=503,
+            detail="KAS service is not ready"
+        )
+
+    return {
+        "status": "healthy",
+        "model": config.EMBEDDING_MODEL,
+    }
 
 
 @app.post("/ingest")
@@ -162,7 +197,18 @@ def ingest(body: IngestRequest) -> dict:
     doc.id_ = body.meeting_id
 
     if state.index is None:
-        raise HTTPException(status_code=503, detail="index not ready")
+        print("[ERROR] Index is not initialized")
+        raise HTTPException(
+            status_code=503,
+            detail="index not ready"
+        )
+
+    if state.ingest_pipeline is None:
+        print("[ERROR] Ingestion pipeline is not initialized")
+        raise HTTPException(
+            status_code=503,
+            detail="ingestion pipeline not ready"
+        )
 
     try:
         state.index.delete_ref_doc(body.meeting_id, delete_from_store=True)
@@ -285,3 +331,4 @@ def chunk(body: ChunkRequest) -> dict:
             for i, node in enumerate(nodes)
         ],
     }
+

@@ -3,6 +3,12 @@ import os
 # EMBEDDING MODEL TUNING
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "nomic-embed-text")
 
+# OLLAMA SERVER
+OLLAMA_BASE_URL = os.environ.get(
+    "OLLAMA_BASE_URL",
+    "http://127.0.0.1:11434"
+)
+
 # VECTOR STORE
 # "simple" = in-process in-memory store (no Docker; data is lost on restart)
 # "postgres" = persistent pgvector store (see module2-backend/README.md)
