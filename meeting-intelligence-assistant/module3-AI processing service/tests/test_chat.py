@@ -6,6 +6,7 @@ from app.services.chat_service import (
     NOT_FOUND_MESSAGE,
     build_citations,
     build_context_sections,
+    ensure_citations,
 )
 from app.services.exceptions import KASConnectionError, LLMConnectionError
 
@@ -202,6 +203,78 @@ def test_same_section_in_overlapping_chunks_is_one_context_block():
         "section-003",
     ]
     assert sections[1].text == "QA found two blockers in the parser."
+
+
+def test_answer_without_markers_is_attributed_to_sections():
+    """Local models sometimes omit every [n] marker despite the prompt."""
+    sections = build_context_sections([MULTI_SECTION_CHUNK])
+    answer = (
+        "QA found two blockers in the parser. "
+        "The launch should be delayed."
+    )
+
+    fixed, citations = ensure_citations(answer, sections)
+
+    assert fixed == (
+        "QA found two blockers in the parser [2]. "
+        "The launch should be delayed [3]."
+    )
+    assert [(c.index, c.section_id) for c in citations] == [
+        (2, "section-002"),
+        (3, "section-003"),
+    ]
+
+
+def test_missing_markers_are_filled_without_touching_existing_ones():
+    sections = build_context_sections([MULTI_SECTION_CHUNK])
+    answer = "QA found two blockers [2]. The launch should be delayed."
+
+    fixed, citations = ensure_citations(answer, sections)
+
+    assert fixed == (
+        "QA found two blockers [2]. The launch should be delayed [3]."
+    )
+    assert [c.index for c in citations] == [2, 3]
+
+
+def test_a_marker_pointing_at_an_unrelated_section_is_corrected():
+    sections = build_context_sections([MULTI_SECTION_CHUNK])
+    # [1] is the opening thanks; the launch turn is block [3].
+    answer = "The launch should be delayed [1]."
+
+    fixed, citations = ensure_citations(answer, sections)
+
+    assert fixed == "The launch should be delayed [3]."
+    assert [(c.index, c.section_id) for c in citations] == [
+        (3, "section-003")
+    ]
+
+
+def test_a_sentence_without_enough_overlap_stays_uncited():
+    sections = build_context_sections([MULTI_SECTION_CHUNK])
+
+    fixed, citations = ensure_citations("Thanks.", sections)
+
+    assert fixed == "Thanks."
+    assert citations == []
+
+
+def test_out_of_range_markers_are_removed():
+    sections = build_context_sections([MULTI_SECTION_CHUNK])
+
+    fixed, citations = ensure_citations("A bogus claim [9].", sections)
+
+    assert fixed == "A bogus claim."
+    assert citations == []
+
+
+def test_not_found_answer_is_never_cited():
+    sections = build_context_sections([MULTI_SECTION_CHUNK])
+
+    fixed, citations = ensure_citations(NOT_FOUND_MESSAGE, sections)
+
+    assert fixed == NOT_FOUND_MESSAGE
+    assert citations == []
 
 
 def test_chunk_without_metadata_falls_back_to_one_block():

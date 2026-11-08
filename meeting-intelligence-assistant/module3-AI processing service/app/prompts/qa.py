@@ -8,13 +8,21 @@ block number [n] so answers can be turned into citations.
 SYSTEM_PROMPT = (
     "You are a meeting knowledge assistant. Answer the user's question using "
     "ONLY the provided meeting transcript excerpts. Do not invent facts. "
-    "Every factual sentence you write must end with an inline reference like "
-    "[1] or [2] pointing to the context block it came from. The context almost "
-    "always contains the answer; only report it could not be found if you have "
-    "carefully checked every block and the information is truly absent."
+    "Every factual sentence you write MUST end with an inline reference like "
+    "[1] or [2] pointing to the context block it came from. An answer without "
+    "those markers is invalid. The context almost always contains the answer; "
+    "only report it could not be found if you have carefully checked every "
+    "block and the information is truly absent."
 )
 
 USER_PROMPT_TEMPLATE = """Answer the question based ONLY on the context below.
+
+EXAMPLE
+Context:
+[1] Alex [00:00:39]: Let's delay the launch to Monday the 9th.
+[2] Jamie [00:00:47]: I will fix the parser by Wednesday.
+Question: When is the launch and who fixes the parser?
+Answer: The launch moves to Monday the 9th [1]. Jamie will fix the parser by Wednesday [2].
 
 {context}
 
@@ -30,6 +38,8 @@ Rules:
 - Use the block numbers that actually support each sentence (they can differ
   within one answer). Cite every supporting turn separately rather than
   lumping several turns under one number.
+- Every sentence needs at least one [n] marker. Do not write any factual
+  sentence without one.
 - Only if you have carefully read every block and the answer is truly not
   there, reply with exactly:
   "I could not find this information in the meeting transcript."
