@@ -8,6 +8,8 @@ Strategy:
 Summary uses map-reduce (`merge_summaries`); action items / decisions / topics
 use per-chunk extraction plus keyed de-duplication.
 """
+import time
+import uuid
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -25,27 +27,48 @@ logger = get_logger(__name__)
 _IMPORTANCE_RANK = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
 
 
+
 async def chunk_analysis_input(
     transcript: str,
     kas: KASClient | None,
     meeting_id: str | None = None,
 ) -> list[str]:
-    """Return the pieces the analysis should run on.
 
-    If there is no KAS client (offline/backwards compatible) or the transcript
-    is within the context budget, a single piece (the whole transcript) is
-    returned and no network call happens.
-    """
-    threshold = get_settings().chunk_threshold_chars
+    settings = get_settings()
+    threshold = settings.chunk_threshold_chars
+
+    logger.info(
+        "[CHUNKING] Transcript=%d | Threshold=%d",
+        len(transcript),
+        threshold,
+    )
 
     if kas is None or len(transcript) <= threshold:
+        logger.info("[CHUNKING] Skipping chunking")
         return [transcript]
 
     chunks = await kas.chunk(meeting_id, transcript)
-    cleaned = [chunk.strip() for chunk in chunks if chunk and chunk.strip()]
 
-    # Even an aggressive chunker must not leave us with nothing.
-    return cleaned or [transcript]
+    cleaned = [
+        chunk.strip()
+        for chunk in chunks
+        if chunk and chunk.strip()
+    ]
+
+    logger.info(
+        "[CHUNKING] KAS returned %d chunks | Sizes=%s",
+        len(cleaned),
+        [len(chunk) for chunk in cleaned],
+    )
+
+    if not cleaned:
+        logger.warning(
+            "[CHUNKING] Empty KAS response; using original transcript"
+        )
+        return [transcript]
+
+    return cleaned
+
 
 
 def _normalise(text: str) -> str:
@@ -53,37 +76,93 @@ def _normalise(text: str) -> str:
 
 
 async def map_chunks(chunks: list[str], extract_chunk) -> list:
-    """Run extract_chunk over every chunk, tolerating flaky local-model JSON.
+    """Process chunks sequentially with detailed logging."""
 
-    Small models occasionally return valid JSON with the wrong keys, most
-    often on large chunks. Strategy: retry the failed chunk once, then skip
-    it (losing that slice of detail beats failing the whole request).
-    Raises only if EVERY chunk fails, i.e. we have nothing to merge.
-    """
     results = []
     total = len(chunks)
+    operation_id = uuid.uuid4().hex[:8]
+
+    logger.info(
+        "[CHUNKS:%s] START | Total chunks=%d",
+        operation_id,
+        total,
+    )
 
     for position, chunk in enumerate(chunks, 1):
+        chunk_started = time.perf_counter()
+
+        logger.info(
+            "[CHUNKS:%s] PROCESSING | Chunk=%d/%d | Characters=%d",
+            operation_id,
+            position,
+            total,
+            len(chunk),
+        )
+
         try:
-            results.append(await extract_chunk(chunk))
-            continue
-        except LLMInvalidResponse:
+            result = await extract_chunk(chunk)
+            results.append(result)
+
+            elapsed = time.perf_counter() - chunk_started
+
+            logger.info(
+                "[CHUNKS:%s] SUCCESS | Chunk=%d/%d | Duration=%.2fs",
+                operation_id,
+                position,
+                total,
+                elapsed,
+            )
+
+        except LLMInvalidResponse as exc:
             logger.warning(
-                "Chunk %d/%d returned invalid JSON; retrying once.",
+                "[CHUNKS:%s] FIRST ATTEMPT FAILED | Chunk=%d/%d | Error=%s",
+                operation_id,
+                position,
+                total,
+                exc,
+            )
+
+            try:
+                result = await extract_chunk(chunk)
+                results.append(result)
+
+                logger.info(
+                    "[CHUNKS:%s] RETRY SUCCESS | Chunk=%d/%d",
+                    operation_id,
+                    position,
+                    total,
+                )
+
+            except LLMInvalidResponse as retry_exc:
+                logger.error(
+                    "[CHUNKS:%s] CHUNK SKIPPED | Chunk=%d/%d | Error=%s",
+                    operation_id,
+                    position,
+                    total,
+                    retry_exc,
+                )
+
+        except Exception:
+            logger.exception(
+                "[CHUNKS:%s] UNEXPECTED FAILURE | Chunk=%d/%d",
+                operation_id,
                 position,
                 total,
             )
-        try:
-            results.append(await extract_chunk(chunk))
-        except LLMInvalidResponse:
-            logger.warning(
-                "Chunk %d/%d failed again; skipping this chunk.", position, total
-            )
+            raise
+
+    logger.info(
+        "[CHUNKS:%s] FINISHED | Successful=%d | Failed=%d",
+        operation_id,
+        len(results),
+        total - len(results),
+    )
 
     if not results:
         raise LLMInvalidResponse(
-            f"All {total} chunk extraction attempts returned invalid JSON."
+            f"All {total} chunk extraction attempts failed."
         )
+
     return results
 
 

@@ -4,30 +4,46 @@ The KAS owns chunking, embeddings and the vector store; this module only
 sends already-parsed transcripts and search queries over HTTP.
 """
 
+from os import path
 from typing import Any
 from urllib.parse import quote
 
 import httpx
+import logging
+import time
 
 from app.core.config import KNOWLEDGE_SERVICE_URL, KNOWLEDGE_TIMEOUT_SECONDS
 
+
+logger = logging.getLogger(__name__)
 
 class KnowledgeServiceError(RuntimeError):
     """Raised when the knowledge service is unreachable or returns an error."""
 
 
 def _post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    start_time = time.perf_counter()
+    logger.info("Knowledge service request started | endpoint=%s", path)
     url = f"{KNOWLEDGE_SERVICE_URL}{path}"
     # Fail fast when the service is down, but allow long embedding runs.
     timeout = httpx.Timeout(KNOWLEDGE_TIMEOUT_SECONDS, connect=10.0)
     try:
         response = httpx.post(url, json=payload, timeout=timeout)
     except httpx.HTTPError as exc:
+        logger.exception(
+            "Knowledge service connection failed | endpoint=%s",
+            path,
+        )
         raise KnowledgeServiceError(
             f"Knowledge service unreachable at {KNOWLEDGE_SERVICE_URL}: {exc}"
         ) from exc
 
     if response.status_code >= 400:
+        logger.error(
+            "Knowledge service returned an error | endpoint=%s | status=%s",
+            path,
+            response.status_code,
+        )
         raise KnowledgeServiceError(
             f"Knowledge service returned {response.status_code}: {response.text}"
         )

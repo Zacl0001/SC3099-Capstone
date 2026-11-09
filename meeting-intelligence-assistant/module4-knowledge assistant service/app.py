@@ -17,7 +17,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from llama_index.core import Document, VectorStoreIndex
 from llama_index.core.ingestion import IngestionPipeline
-from llama_index.core.node_parser import SemanticSplitterNodeParser
+from llama_index.core.node_parser import (
+    SemanticSplitterNodeParser,
+    SentenceSplitter,
+)
 from llama_index.core.vector_stores import MetadataFilter, MetadataFilters
 from pydantic import BaseModel, Field
 
@@ -96,11 +99,19 @@ async def lifespan(app: FastAPI):
     )
     print("[STARTUP] Vector index initialized")
 
+    # --------------------------------------------------
+    # INGESTION PIPELINE
+    # Semantic chunking for knowledge retrieval
+    # --------------------------------------------------
+
     print("[STARTUP] Creating ingestion pipeline...")
+
     state.ingest_pipeline = IngestionPipeline(
         transformations=[
             SemanticSplitterNodeParser(
-                embed_model=state.embedding_model
+                embed_model=state.embedding_model,
+                buffer_size=1,
+                breakpoint_percentile_threshold=95,
             ),
             AttachSectionMetadata(),
             RestoreSectionHeaders(),
@@ -109,17 +120,27 @@ async def lifespan(app: FastAPI):
         vector_store=state.vector_store,
     )
 
-    print("[STARTUP] Creating chunk pipeline...")
+    print("[STARTUP] Ingestion pipeline initialized")
+
+    # --------------------------------------------------
+    # ANALYSIS CHUNK PIPELINE
+    # Fixed-size sentence chunking for LLM extraction
+    # --------------------------------------------------
+
+    print("[STARTUP] Creating analysis chunk pipeline...")
+
     state.chunk_pipeline = IngestionPipeline(
         transformations=[
-            SemanticSplitterNodeParser(
-                embed_model=state.embedding_model
+            SentenceSplitter(
+                chunk_size=1500,
+                chunk_overlap=150,
             ),
             AttachSectionMetadata(),
             RestoreSectionHeaders(),
         ],
     )
 
+    print("[STARTUP] Analysis chunk pipeline initialized")
     print("[STARTUP] KAS ready")
 
     yield
@@ -127,9 +148,14 @@ async def lifespan(app: FastAPI):
     if hasattr(state.embedding_model, "aclose"):
         await state.embedding_model.aclose()
 
+# --------------------------------------------------------------------------
+# FastAPI application
+# --------------------------------------------------------------------------
 
-app = FastAPI(title="Knowledge Assistant Service", lifespan=lifespan)
-
+app = FastAPI(
+    title="Knowledge Assistant Service",
+    lifespan=lifespan,
+)
 
 # Contract: validation errors are 400, not FastAPI's default 422.
 @app.exception_handler(RequestValidationError)
@@ -299,9 +325,11 @@ def search(body: SearchRequest) -> dict:
     return {"query": body.query, "results": results}
 
 
+
 @app.post("/chunk")
 def chunk(body: ChunkRequest) -> dict:
-    """Semantic chunking WITHOUT indexing (long-transcript analysis)."""
+    """Fixed-size sentence chunking WITHOUT indexing."""
+
     if not body.transcript and not body.sections:
         raise HTTPException(
             status_code=400,
@@ -316,19 +344,45 @@ def chunk(body: ChunkRequest) -> dict:
             "meeting_start_time": "",
             "sections": [s.model_dump() for s in body.sections],
         }
+
         doc = create_document(meeting)
+
     else:
         doc = Document(text=body.transcript or "")
 
     if not doc.text.strip():
-        return {"meeting_id": body.meeting_id, "chunks": []}
+        return {
+            "meeting_id": body.meeting_id,
+            "chunks": [],
+        }
 
-    nodes = _run_pipeline(state.chunk_pipeline, documents=[doc])
+    if state.chunk_pipeline is None:
+        raise HTTPException(
+            status_code=503,
+            detail="chunk pipeline not ready",
+        )
+
+    nodes = _run_pipeline(
+        state.chunk_pipeline,
+        documents=[doc],
+    )
+
+    chunks = [
+        {
+            "chunk_index": i,
+            "text": node.text,
+        }
+        for i, node in enumerate(nodes)
+    ]
+
+    print(
+        f"[CHUNK] Meeting={body.meeting_id} | "
+        f"Transcript={len(doc.text)} chars | "
+        f"Chunks={len(chunks)} | "
+        f"Sizes={[len(c['text']) for c in chunks]}"
+    )
+
     return {
         "meeting_id": body.meeting_id,
-        "chunks": [
-            {"chunk_index": i, "text": node.text}
-            for i, node in enumerate(nodes)
-        ],
+        "chunks": chunks,
     }
-

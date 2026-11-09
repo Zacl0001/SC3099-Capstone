@@ -24,6 +24,9 @@ from pypdf.errors import PdfReadError
 from docx import Document
 from zipfile import BadZipFile
 from lxml.etree import XMLSyntaxError
+import logging
+
+logger = logging.getLogger(__name__)
 
 STORAGE_ROOT  = Path(__file__).resolve().parents[3] / "storage" # builds path to storage folder
 
@@ -63,6 +66,11 @@ def save_transcript_file(file: UploadFile) -> str:
 
         raise 
 
+    logger.info(
+        "Transcript file saved | file_type=%s | size_bytes=%s",
+        extension,
+        total_bytes,
+    )
     return f"transcripts/{stored_name}"
 
 
@@ -95,6 +103,12 @@ def extract_transcript_txt(storage_key: str) -> str:
 
     if not text:
         raise ValueError("transcript contains no text")
+
+    logger.info(
+        "Transcript text extracted | file_type=%s | characters=%s",
+        extension,
+        len(text),
+    )
 
     return text
 

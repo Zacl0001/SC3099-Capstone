@@ -5,8 +5,6 @@ FastAPI backend for authentication, meeting uploads, transcript processing,
 and the AI/RAG-facing analysis endpoints.
 """
 
-import logging
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -19,6 +17,11 @@ from app.api.routes.summaries import router as summaries_router
 from app.api.routes.topics import router as topics_router
 from app.api.routes.transcripts import router as transcript_router
 
+import time
+import logging
+from app.core.logging_config import setup_logging
+
+setup_logging()
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Meeting intelligence Backend")
@@ -46,3 +49,36 @@ app.include_router(chat_router)
 @app.get("/health")
 def health() -> dict:
     return {"status": "healthy"}
+
+@app.middleware("http")
+async def request_logging(request, call_next):
+    start_time = time.perf_counter()
+
+    method = request.method
+    path = request.url.path
+
+    try:
+        response = await call_next(request)
+
+        duration = (time.perf_counter() - start_time) * 1000
+
+        logger.info(
+            "HTTP request completed | method=%s | path=%s | status=%s | duration_ms=%.2f",
+            method,
+            path,
+            response.status_code,
+            duration,
+        )
+
+        return response
+
+    except Exception:
+        duration = (time.perf_counter() - start_time) * 1000
+
+        logger.exception(
+            "HTTP request failed | method=%s | path=%s | duration_ms=%.2f",
+            method,
+            path,
+            duration,
+        )
+        raise

@@ -21,6 +21,10 @@ from sqlalchemy.orm import Session
 
 from app.models.analysis_result import AnalysisResult
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # Bump when module3's prompts or response schemas change so old payloads are
 # not reused.
 CACHE_VERSION = "1"
@@ -97,8 +101,12 @@ def store(
         # Another request inserted the row first; keep its value.
         db.rollback()
     except Exception:
+        logger.exception(
+            "Analysis cache write failed | meeting_id=%s | kind=%s",
+            meeting_id,
+            kind,
+        )
         db.rollback()
-
 
 def get_or_generate(
     db: Session,
@@ -108,25 +116,63 @@ def get_or_generate(
     generate: Callable[[], dict[str, Any]],
     refresh: bool = False,
 ) -> dict[str, Any]:
-    """Return the cached analysis, generating and storing it on a miss.
 
-    A per-(meeting, kind) lock serialises concurrent requests in this process
-    (for example React Strict Mode's double mount) so the LLM is called once.
-    """
     digest = transcript_hash(transcript)
 
     if not refresh:
         cached = get_cached(db, meeting_id, kind, digest)
+
         if cached is not None:
+            logger.info(
+                "Analysis cache hit | meeting_id=%s | kind=%s",
+                meeting_id,
+                kind,
+            )
             return cached
 
+    logger.info(
+        "Analysis cache miss or refresh | meeting_id=%s | kind=%s | refresh=%s",
+        meeting_id,
+        kind,
+        refresh,
+    )
+
     with _lock_for(meeting_id, kind):
-        # Re-check: the first request through the lock may have populated it.
+
         if not refresh:
             cached = get_cached(db, meeting_id, kind, digest)
+
             if cached is not None:
+                logger.info(
+                    "Analysis cache hit after lock | meeting_id=%s | kind=%s",
+                    meeting_id,
+                    kind,
+                )
                 return cached
 
-        payload = generate()
+        logger.info(
+            "AI analysis generation started | meeting_id=%s | kind=%s",
+            meeting_id,
+            kind,
+        )
+
+        try:
+            payload = generate()
+
+            logger.info(
+                "AI analysis generation completed | meeting_id=%s | kind=%s",
+                meeting_id,
+                kind,
+            )
+
+        except Exception:
+            logger.exception(
+                "AI analysis generation failed | meeting_id=%s | kind=%s",
+                meeting_id,
+                kind,
+            )
+            raise
+
         store(db, meeting_id, kind, digest, payload)
+
         return payload
