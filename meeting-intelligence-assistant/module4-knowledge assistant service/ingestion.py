@@ -31,53 +31,67 @@ def load_meeting_json(file_path: str | Path) -> dict:
         return json.load(file)
 
 
+
 def create_document(meeting_data: dict) -> Document:
-    """Convert meeting JSON data into a LlamaIndex Document."""
+    """Convert meeting JSON into a document with source metadata."""
+
     lines = []
     section_metadata = []
+    current_position = 0
 
     for section in meeting_data["sections"]:
         timestamp = section.get("timestamp")
-        header = section["speaker_name"]
+        speaker = section["speaker_name"]
+        original_text = section["text"]
+
+        header = speaker
         if timestamp:
             header += f" [{timestamp}]"
-        line = f"{header}: {section['text']}"
 
-        section_start = len("\n".join(lines)) + (1 if lines else 0)
-        section_metadata.append(
-            {
-                "section_id": section["section_id"],
-                "speaker": section["speaker_name"],
-                "timestamp": timestamp,
-                "start": section_start,
-                "end": section_start + len(line),
-            }
-        )
+        line = f"{header}: {original_text}"
+
+        section_start = current_position
+        section_end = section_start + len(line)
+
+        section_metadata.append({
+            "section_id": section["section_id"],
+            "speaker": speaker,
+            "timestamp": timestamp,
+            "start": section_start,
+            "end": section_end,
+            "text": original_text,
+        })
 
         lines.append(line)
+        current_position = section_end + 1
 
-    speakers = sorted(
-        {section["speaker_name"] for section in meeting_data["sections"]}
-    )
+    speakers = sorted({
+        section["speaker_name"]
+        for section in meeting_data["sections"]
+    })
 
     document = Document(
         id_=str(meeting_data["meeting_id"]),
         text="\n".join(lines),
         metadata={
             "meeting_id": str(meeting_data["meeting_id"]),
-            "title": meeting_data["title"],
-            "meeting_date": _isoformat(meeting_data.get("meeting_date")),
-            "meeting_start_time": _isoformat(meeting_data.get("meeting_start_time")),
+            "title": meeting_data.get("title", ""),
+            "meeting_date": _isoformat(
+                meeting_data.get("meeting_date")
+            ),
+            "meeting_start_time": _isoformat(
+                meeting_data.get("meeting_start_time")
+            ),
             "speakers": speakers,
             "section_metadata": section_metadata,
         },
     )
 
-    # Keep metadata that is not useful for semantic processing out of the embedding and LLM prompt text.
     document.excluded_embed_metadata_keys = [
         "section_metadata",
         "meeting_start_time",
     ]
+
     document.excluded_llm_metadata_keys = [
         "section_metadata",
     ]
@@ -91,15 +105,19 @@ def _isoformat(value):
 
 
 class AttachSectionMetadata(TransformComponent):
-    """Keep only the transcript sections that overlap each chunk."""
+    """Attach original transcript sections overlapping each chunk."""
 
     def __call__(
         self,
         nodes: list[BaseNode],
         **kwargs: Any,
     ) -> list[BaseNode]:
+
         for node in nodes:
-            sections = node.metadata.get("section_metadata", [])
+            sections = node.metadata.get(
+                "section_metadata", []
+            )
+
             node_start = node.start_char_idx
             node_end = node.end_char_idx
 
@@ -107,11 +125,16 @@ class AttachSectionMetadata(TransformComponent):
                 node.metadata["section_metadata"] = sections
                 continue
 
-            node.metadata["section_metadata"] = [
+            overlapping = [
                 section
                 for section in sections
-                if node_start < section["end"] and node_end > section["start"]
+                if (
+                    node_start < section["end"]
+                    and node_end > section["start"]
+                )
             ]
+
+            node.metadata["section_metadata"] = overlapping
 
         return nodes
 
