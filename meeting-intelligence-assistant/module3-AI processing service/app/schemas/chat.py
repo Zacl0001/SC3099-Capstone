@@ -1,6 +1,77 @@
 """Schemas for the RAG question-answering endpoint (/chat)."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+class GroundedClaim(BaseModel):
+    """One factual claim and its supporting transcript sections."""
+
+    text: str = Field(
+        ...,
+        min_length=1,
+        description="One factual claim supported by the transcript.",
+    )
+
+    evidence_indices: list[int] = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Positive context block numbers that directly support "
+            "the claim."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_evidence_indices(self):
+        if any(index < 1 for index in self.evidence_indices):
+            raise ValueError(
+                "Evidence indices must be positive integers."
+            )
+
+        if len(self.evidence_indices) != len(
+            set(self.evidence_indices)
+        ):
+            raise ValueError(
+                "Evidence indices must not contain duplicates."
+            )
+
+        if not self.text.strip():
+            raise ValueError("Claim text cannot be empty.")
+
+        return self
+
+
+
+class GroundedAnswer(BaseModel):
+    """Structured answer containing claims and supporting evidence."""
+
+    claims: list[GroundedClaim] = Field(
+        default_factory=list,
+        description="Factual claims supported by transcript evidence.",
+    )
+
+    not_found: bool = Field(
+        default=False,
+        description=(
+            "True only when no relevant answer can be established "
+            "from the supplied transcript sections."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_answer(self):
+        if self.not_found and self.claims:
+            raise ValueError(
+                "A not-found answer cannot contain factual claims."
+            )
+
+        if not self.not_found and not self.claims:
+            raise ValueError(
+                "An answer must contain claims or be marked not_found."
+            )
+
+        return self
+
 
 
 class ChatRequest(BaseModel):

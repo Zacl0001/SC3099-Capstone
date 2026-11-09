@@ -81,13 +81,14 @@ class LLMService:
         return await self._chat(messages)
 
     
+        
     async def generate_structured(
         self,
         system_prompt: str,
         user_prompt: str,
         response_model: type[TModel],
     ) -> TModel:
-        """Generate structured JSON and validate against Pydantic."""
+        """Generate JSON and validate it against a Pydantic model."""
 
         request_id = uuid.uuid4().hex[:8]
         started_at = time.perf_counter()
@@ -99,19 +100,29 @@ class LLMService:
 
         schema = response_model.model_json_schema()
 
+        # Include the schema explicitly in the prompt.
+        messages[1]["content"] += (
+            "\n\nREQUIRED JSON SCHEMA:\n"
+            + json.dumps(schema, indent=2)
+            + "\nReturn only a JSON object matching this schema."
+        )
+
         logger.info(
-            "[LLM:%s] START | Model=%s | Schema=%s | Prompt chars=%d",
+            "[LLM:%s] STRUCTURED START | Model=%s | Schema=%s",
             request_id,
             self.model,
             response_model.__name__,
-            len(user_prompt),
         )
 
         retrier = AsyncRetrying(
             reraise=True,
             retry=retry_if_exception_type(LLMInvalidResponse),
             stop=stop_after_attempt(2),
-            wait=wait_exponential(multiplier=1, min=1, max=4),
+            wait=wait_exponential(
+                multiplier=1,
+                min=1,
+                max=4,
+            ),
             before_sleep=lambda retry_state: logger.warning(
                 "[LLM:%s] RETRY | Attempt=%d | Error=%s",
                 request_id,
@@ -125,7 +136,13 @@ class LLMService:
                 with attempt:
                     raw = await self._chat(
                         messages,
-                        response_schema=schema,
+                        response_schema={"type": "json_object"},
+                    )
+
+                    logger.info(
+                        "[LLM:%s] RAW STRUCTURED OUTPUT | %s",
+                        request_id,
+                        raw[:3000],
                     )
 
                     data = _parse_json_object(raw)
@@ -138,42 +155,39 @@ class LLMService:
                     try:
                         result = response_model.model_validate(data)
 
-                        elapsed = time.perf_counter() - started_at
-
-                        logger.info(
-                            "[LLM:%s] SUCCESS | Model=%s | Duration=%.2fs | Output chars=%d",
-                            request_id,
-                            self.model,
-                            elapsed,
-                            len(raw),
-                        )
-
-                        return result
-
                     except ValidationError as exc:
                         logger.error(
-                            "[LLM:%s] VALIDATION FAILED | Errors=%s | Output=%r",
+                            "[LLM:%s] VALIDATION FAILED | Errors=%s",
                             request_id,
                             exc.errors(),
-                            raw[:1500],
                         )
 
                         raise LLMInvalidResponse(
-                            f"LLM output failed Pydantic validation: {exc.errors()}"
+                            f"LLM output failed validation: {exc.errors()}"
                         ) from exc
 
-        except Exception as exc:
-            elapsed = time.perf_counter() - started_at
+                    elapsed = time.perf_counter() - started_at
 
+                    logger.info(
+                        "[LLM:%s] STRUCTURED SUCCESS | Duration=%.2fs",
+                        request_id,
+                        elapsed,
+                    )
+
+                    return result
+
+        except Exception as exc:
             logger.exception(
-                "[LLM:%s] FAILED | Duration=%.2fs | Error=%s",
+                "[LLM:%s] STRUCTURED FAILED | Error=%s",
                 request_id,
-                elapsed,
                 exc,
             )
             raise
 
-        raise LLMInvalidResponse("LLM failed to produce a valid response.")
+        raise LLMInvalidResponse(
+            "LLM failed to produce a valid structured response."
+        )
+
 
 
     async def _chat(

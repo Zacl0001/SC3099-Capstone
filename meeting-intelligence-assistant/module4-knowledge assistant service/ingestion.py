@@ -53,14 +53,16 @@ def create_document(meeting_data: dict) -> Document:
         section_start = current_position
         section_end = section_start + len(line)
 
-        section_metadata.append({
-            "section_id": section["section_id"],
-            "speaker": speaker,
-            "timestamp": timestamp,
-            "start": section_start,
-            "end": section_end,
-            "text": original_text,
-        })
+        section_metadata.append(
+            {
+                "section_id": section["section_id"],
+                "speaker": section["speaker_name"],
+                "timestamp": timestamp,
+                "text": line,
+                "start": section_start,
+                "end": section_start + len(line),
+            }
+        )
 
         lines.append(line)
         current_position = section_end + 1
@@ -114,9 +116,7 @@ class AttachSectionMetadata(TransformComponent):
     ) -> list[BaseNode]:
 
         for node in nodes:
-            sections = node.metadata.get(
-                "section_metadata", []
-            )
+            sections = node.metadata.get("section_metadata", [])
 
             node_start = node.start_char_idx
             node_end = node.end_char_idx
@@ -125,18 +125,20 @@ class AttachSectionMetadata(TransformComponent):
                 node.metadata["section_metadata"] = sections
                 continue
 
-            overlapping = [
-                section
-                for section in sections
+            overlapping_sections = []
+
+            for section in sections:
+
                 if (
                     node_start < section["end"]
                     and node_end > section["start"]
-                )
-            ]
+                ):
+                    overlapping_sections.append(section)
 
-            node.metadata["section_metadata"] = overlapping
+            node.metadata["section_metadata"] = overlapping_sections
 
         return nodes
+
 
 class RestoreSectionHeaders(TransformComponent):
     """Prepend speaker/timestamp when a chunk starts inside a section."""

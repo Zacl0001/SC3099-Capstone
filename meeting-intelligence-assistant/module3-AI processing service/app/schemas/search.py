@@ -4,19 +4,15 @@
 from pydantic import BaseModel, Field
 
 
+
+
 class SectionRef(BaseModel):
-    """Original transcript section overlapping a retrieved chunk."""
+    """A source section (speaker turn) a retrieved chunk overlaps."""
 
-    section_id: str
-    speaker: str | None = None
-    timestamp: str | None = None
-
-    # Original transcript character offsets.
-    start: int | None = None
-    end: int | None = None
-
-    # Original speaker-turn text, when available.
-    text: str | None = None
+    section_id: str = Field(...)
+    speaker: str = Field(...)
+    timestamp: str = Field(...)
+    text: str = Field(default="")
 
 
 class RetrievedChunk(BaseModel):
