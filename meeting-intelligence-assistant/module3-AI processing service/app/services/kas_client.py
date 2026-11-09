@@ -55,24 +55,62 @@ class KASClient:
     # Public API
     # ------------------------------------------------------------------
 
+    
+    
+    
     async def search(
-        self, meeting_id: str, query: str, top_k: int | None = None
+        self,
+        meeting_id: str,
+        query: str,
+        top_k: int | None = None,
     ) -> list[RetrievedChunk]:
-        """Retrieve the top-K chunks for a question within one meeting."""
+        """Retrieve top-K chunks for one meeting."""
+
+        meeting_id = str(meeting_id)
+
         payload = {
             "meeting_id": meeting_id,
             "query": query,
             "top_k": top_k or self.default_top_k,
         }
+
+        logger.info(
+            "[KAS] Search started | meeting=%s | top_k=%s | query=%s",
+            meeting_id,
+            payload["top_k"],
+            query,
+        )
+
         data = await self._request("POST", "/search", payload)
+
         try:
             parsed = SearchResponse.model_validate(data)
         except ValidationError as exc:
             raise KASInvalidResponse(
-                f"KAS /search response failed validation: {exc.errors()[0] if exc.errors() else exc}"
+                f"KAS /search response failed validation: "
+                f"{exc.errors()[0] if exc.errors() else exc}"
             ) from exc
-        # Guard against a pathological response consuming all context.
-        return parsed.results[:_MAX_CHUNKS]
+
+        results = parsed.results[:_MAX_CHUNKS]
+
+        logger.info(
+            "[KAS] Search completed | meeting=%s | results=%d",
+            meeting_id,
+            len(results),
+        )
+
+        for index, chunk in enumerate(results, start=1):
+            logger.debug(
+                "[KAS] Result %d | score=%s | text=%s",
+                index,
+                chunk.score,
+                chunk.text[:300],
+            )
+
+        return results
+
+
+
 
     async def chunk(self, meeting_id: str | None, transcript: str) -> list[str]:
         """Split a transcript into semantic chunks WITHOUT indexing them.

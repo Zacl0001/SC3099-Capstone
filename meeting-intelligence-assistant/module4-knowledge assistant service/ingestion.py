@@ -61,7 +61,7 @@ def create_document(meeting_data: dict) -> Document:
     )
 
     document = Document(
-        id_=f"meeting:{meeting_data['meeting_id']}",
+        id_=str(meeting_data["meeting_id"]),
         text="\n".join(lines),
         metadata={
             "meeting_id": str(meeting_data["meeting_id"]),
@@ -172,6 +172,8 @@ class MeetingIngestor:
             transformations=[
                 SemanticSplitterNodeParser(
                     embed_model=self.embedding_model,
+                    buffer_size=1,
+                    breakpoint_percentile_threshold=85,
                 ),
                 AttachSectionMetadata(),
                 RestoreSectionHeaders(),

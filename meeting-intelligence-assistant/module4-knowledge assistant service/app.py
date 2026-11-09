@@ -57,7 +57,7 @@ class IngestRequest(BaseModel):
 class SearchRequest(BaseModel):
     meeting_id: str
     query: str
-    top_k: int = Field(default=5, ge=1, le=20)
+    top_k: int = Field(default=10, ge=1, le=20)
 
 
 class ChunkRequest(BaseModel):
@@ -111,7 +111,7 @@ async def lifespan(app: FastAPI):
             SemanticSplitterNodeParser(
                 embed_model=state.embedding_model,
                 buffer_size=1,
-                breakpoint_percentile_threshold=95,
+                breakpoint_percentile_threshold=85,
             ),
             AttachSectionMetadata(),
             RestoreSectionHeaders(),
@@ -218,9 +218,11 @@ def health() -> dict:
 def ingest(body: IngestRequest) -> dict:
     """Index one meeting. Idempotent: doc id == meeting_id, so re-ingest
     deletes the previous chunks for that meeting first."""
+    meeting_id = str(body.meeting_id)
     meeting = body.model_dump()
+    meeting["meeting_id"] = meeting_id
+
     doc = create_document(meeting)
-    doc.id_ = body.meeting_id
 
     if state.index is None:
         print("[ERROR] Index is not initialized")
@@ -237,9 +239,15 @@ def ingest(body: IngestRequest) -> dict:
         )
 
     try:
-        state.index.delete_ref_doc(body.meeting_id, delete_from_store=True)
-    except Exception:  # first ingest: nothing to delete
-        pass
+        state.index.delete_ref_doc(
+            body.meeting_id,
+            delete_from_store=True
+        )
+    except Exception as exc:
+        print(
+            f"[INGEST WARNING] Could not delete previous document "
+            f"{body.meeting_id}: {exc}"
+        )
 
     nodes = _run_pipeline(state.ingest_pipeline, documents=[doc])
     return {
@@ -275,28 +283,42 @@ def delete_meeting_chunks(meeting_id: str) -> dict:
     return {"meeting_id": meeting_id, "status": "deleted"}
 
 
+
 @app.post("/search")
 def search(body: SearchRequest) -> dict:
-    """Top-K semantic search scoped to ONE meeting's chunks."""
+    """Top-K semantic search scoped to one meeting."""
+
     if state.index is None:
-        raise HTTPException(status_code=503, detail="index not ready")
+        raise HTTPException(
+            status_code=503,
+            detail="index not ready",
+        )
+
+    meeting_id = str(body.meeting_id)
 
     filters = MetadataFilters(
         filters=[
-            MetadataFilter(key="meeting_id", value=body.meeting_id),
+            MetadataFilter(
+                key="meeting_id",
+                value=meeting_id,
+            ),
         ]
     )
 
     try:
         retriever = state.index.as_retriever(
-            similarity_top_k=body.top_k, filters=filters
+            similarity_top_k=body.top_k,
+            filters=filters,
         )
+
         nodes = retriever.retrieve(body.query)
+
     except ollama.ResponseError as exc:
         raise HTTPException(
             status_code=503,
             detail=f"embedding model (Ollama) error: {exc}",
         ) from exc
+
     except _OLLAMA_UNREACHABLE as exc:
         raise HTTPException(
             status_code=503,
@@ -304,25 +326,50 @@ def search(body: SearchRequest) -> dict:
         ) from exc
 
     results = []
+
     for hit in nodes:
         metadata = hit.node.metadata
-        # Safety net in case the vector store does not push the filter down.
-        if metadata.get("meeting_id") != body.meeting_id:
-            continue
-        results.append(
-            {
-                "text": hit.node.text,
-                "score": float(hit.score or 0.0),
-                "meeting_id": metadata.get("meeting_id"),
-                "title": metadata.get("title"),
-                "meeting_date": metadata.get("meeting_date"),
-                "meeting_start_time": metadata.get("meeting_start_time"),
-                "speakers": metadata.get("speakers", []),
-                "section_metadata": metadata.get("section_metadata", []),
-            }
-        )
 
-    return {"query": body.query, "results": results}
+        if str(metadata.get("meeting_id")) != meeting_id:
+            continue
+
+        result = {
+            "text": hit.node.text,
+            "score": float(hit.score or 0.0),
+            "meeting_id": metadata.get("meeting_id"),
+            "title": metadata.get("title"),
+            "meeting_date": metadata.get("meeting_date"),
+            "meeting_start_time": metadata.get(
+                "meeting_start_time"
+            ),
+            "speakers": metadata.get("speakers", []),
+            "section_metadata": metadata.get(
+                "section_metadata", []
+            ),
+        }
+
+        results.append(result)
+
+    print("\n[SEARCH DEBUG]")
+    print(f"Meeting ID: {meeting_id}")
+    print(f"Query: {body.query}")
+    print(f"Requested top_k: {body.top_k}")
+    print(f"Retrieved: {len(results)}")
+
+    for index, result in enumerate(results, start=1):
+        print(f"\n--- RESULT {index} ---")
+        print(f"Score: {result['score']}")
+        print(f"Title: {result['title']}")
+        print(f"Text: {result['text'][:1000]}")
+
+    return {
+        "query": body.query,
+        "meeting_id": meeting_id,
+        "requested_top_k": body.top_k,
+        "retrieved_count": len(results),
+        "results": results,
+    }
+
 
 
 

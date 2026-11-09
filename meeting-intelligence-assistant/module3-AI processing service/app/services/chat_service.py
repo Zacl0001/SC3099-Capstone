@@ -8,7 +8,7 @@ The LLM sees one numbered context block per *section* (speaker turn), so each
 ``[n]`` maps to a single transcript location the UI can show as its own
 citation box.
 """
-
+import asyncio
 import re
 from dataclasses import dataclass, replace
 
@@ -17,7 +17,10 @@ from app.schemas.chat import ChatRequest, ChatResponse, Citation
 from app.schemas.search import RetrievedChunk, SectionRef
 from app.services.kas_client import KASClient
 from app.services.llm_service import LLMService
+from app.core.logging import get_logger
 
+
+logger = get_logger(__name__)
 NOT_FOUND_MESSAGE = "I could not find this information in the meeting transcript."
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
@@ -50,7 +53,9 @@ _MIN_COVERAGE = 0.34
 
 _SECTION_HEADER = re.compile(
     r"^(?P<speaker>[^:\n\[\]]{1,40}?)"
-    r"(?:\s*\[(?P<timestamp>\d{1,3}:\d{2}(?::\d{2})?)\])?"
+    r"(?:\s*\[(?P<timestamp>"
+    r"\d{1,3}:\d{2}(?::\d{2})?(?:[.,]\d+)?"
+    r")\])?"
     r"\s*:\s*(?P<text>.*)$"
 )
 
@@ -101,10 +106,13 @@ def _split_text(text: str) -> list[ContextSection]:
     return sections
 
 
+
 def _attach_metadata(
-    sections: list[ContextSection], refs: list[SectionRef]
+    sections: list[ContextSection],
+    refs: list[SectionRef],
 ) -> list[ContextSection]:
-    """Attach ``section_id`` / speaker / timestamp from the chunk metadata."""
+    """Attach metadata using speaker/timestamp matching."""
+
     if not refs:
         return sections
 
@@ -113,28 +121,51 @@ def _attach_metadata(
     result: list[ContextSection] = []
 
     for position, section in enumerate(sections):
-        ref: SectionRef | None = None
+        speaker = (section.speaker or "").strip().casefold()
+        timestamp = _normalise_time(section.timestamp)
+
+        candidates = []
 
         for index, candidate in enumerate(refs):
             if index in used:
                 continue
 
-            speaker_matches = candidate.speaker == section.speaker
-            time_matches = _normalise_time(candidate.timestamp) == _normalise_time(
-                section.timestamp
+            candidate_speaker = (
+                candidate.speaker or ""
+            ).strip().casefold()
+
+            candidate_timestamp = _normalise_time(
+                candidate.timestamp
             )
-            # An empty timestamp in either place means "unknown", not a
-            # mismatch; the speaker plus ordering still identifies the turn.
-            if speaker_matches and (
-                time_matches or not candidate.timestamp or not section.timestamp
+
+            if candidate_speaker != speaker:
+                continue
+
+            if timestamp and candidate_timestamp:
+                if timestamp == candidate_timestamp:
+                    candidates.append((0, index, candidate))
+            else:
+                candidates.append((1, index, candidate))
+
+        ref = None
+
+        if candidates:
+            candidates.sort(key=lambda item: item[0])
+            _, index, ref = candidates[0]
+            used.add(index)
+
+        elif positional and position not in used:
+            # Positional matching is safe only when both lists
+            # contain exactly the same number of sections.
+            candidate = refs[position]
+
+            if (
+                not speaker
+                or not candidate.speaker
+                or speaker == candidate.speaker.strip().casefold()
             ):
                 ref = candidate
-                used.add(index)
-                break
-
-        if ref is None and positional and position not in used:
-            ref = refs[position]
-            used.add(position)
+                used.add(position)
 
         if ref is not None:
             section = replace(
@@ -149,6 +180,7 @@ def _attach_metadata(
     return result
 
 
+
 def _chunk_sections(chunk: RetrievedChunk) -> list[ContextSection]:
     sections = _split_text(chunk.text)
 
@@ -159,33 +191,97 @@ def _chunk_sections(chunk: RetrievedChunk) -> list[ContextSection]:
     return _attach_metadata(sections, chunk.section_metadata)
 
 
-def build_context_sections(chunks: list[RetrievedChunk]) -> list[ContextSection]:
-    """Flatten retrieved chunks into ordered, de-duplicated sections.
+def _merge_section_text(old_text: str, new_text: str) -> str:
+    """Merge overlapping fragments without repeating shared text."""
 
-    The same section can appear in two overlapping chunks; merging by
-    ``section_id`` keeps it as one numbered block and avoids duplicate
-    citation boxes. Sections without an id stay in retrieval order.
+    old_text = old_text.strip()
+    new_text = new_text.strip()
+
+    if not old_text:
+        return new_text
+
+    if not new_text:
+        return old_text
+
+    if old_text in new_text:
+        return new_text
+
+    if new_text in old_text:
+        return old_text
+
+    # Find the largest suffix of the old fragment that matches
+    # the beginning of the new fragment.
+    max_overlap = min(len(old_text), len(new_text))
+
+    for overlap in range(max_overlap, 0, -1):
+        if old_text[-overlap:] == new_text[:overlap]:
+            # Avoid treating a tiny coincidental match as
+            # a meaningful transcript overlap.
+            if overlap >= 20:
+                return old_text + new_text[overlap:]
+
+    # No reliable overlap was found.
+    return f"{old_text} {new_text}"
+
+
+
+def build_context_sections(
+    chunks: list[RetrievedChunk],
+) -> list[ContextSection]:
     """
+    Flatten retrieved chunks into ordered, deduplicated sections.
+
+    Sections with the same section_id are merged.
+    Sections without IDs are deduplicated by their content.
+    """
+
     merged: dict[str, ContextSection] = {}
     order: list[str] = []
     anonymous: list[ContextSection] = []
 
     for chunk in chunks:
         for section in _chunk_sections(chunk):
-            if section.section_id:
-                existing = merged.get(section.section_id)
-                if existing is None:
-                    merged[section.section_id] = section
-                    order.append(section.section_id)
-                elif section.text and section.text not in existing.text:
-                    merged[section.section_id] = replace(
-                        existing,
-                        text=f"{existing.text} {section.text}".strip(),
-                    )
-            else:
-                anonymous.append(section)
 
-    return [merged[section_id] for section_id in order] + anonymous
+            if section.section_id:
+                section_id = section.section_id
+
+                existing = merged.get(section_id)
+
+                if existing is None:
+                    merged[section_id] = section
+                    order.append(section_id)
+                    continue
+
+                merged_text = _merge_section_text(
+                    existing.text,
+                    section.text,
+                )
+
+                merged[section_id] = replace(
+                    existing,
+                    text=merged_text,
+                    speaker=existing.speaker or section.speaker,
+                    timestamp=existing.timestamp or section.timestamp,
+                )
+
+            else:
+                duplicate = any(
+                    item.text.strip() == section.text.strip()
+                    and item.speaker == section.speaker
+                    and _normalise_time(item.timestamp)
+                    == _normalise_time(section.timestamp)
+                    for item in anonymous
+                )
+
+                if not duplicate:
+                    anonymous.append(section)
+
+    return (
+        [merged[section_id] for section_id in order]
+        + anonymous
+    )
+
+
 
 
 def _stem(token: str) -> str:
@@ -313,10 +409,23 @@ def ensure_citations(
         # try to attribute the sentence from its own words - but only replace
         # them when a clear alternative exists, because a paraphrase can be
         # correct without sharing vocabulary with the transcript.
-        if any(
-            sentence_tokens & _tokens(sections[marker - 1].prompt_block())
-            for marker in valid
-        ):
+        valid_support = []
+
+        for marker in valid:
+            section_tokens = _tokens(
+                sections[marker - 1].text
+            )
+
+            overlap = sentence_tokens & section_tokens
+
+            if (
+                len(overlap) >= _MIN_OVERLAP
+                and len(overlap) / max(len(sentence_tokens), 1)
+                >= _MIN_COVERAGE
+            ):
+                valid_support.append(marker)
+
+        if valid_support:
             rewritten.append(sentence)
             continue
 
@@ -331,6 +440,199 @@ def ensure_citations(
 
     return cited_answer, build_citations(cited_answer, sections)
 
+def lexical_score(
+    question: str,
+    chunk: RetrievedChunk,
+) -> float:
+    """Calculate simple keyword overlap with a transcript chunk."""
+
+    question_tokens = _tokens(question)
+    chunk_tokens = _tokens(chunk.text)
+
+    if not question_tokens:
+        return 0.0
+
+    overlap = question_tokens & chunk_tokens
+
+    return len(overlap) / len(question_tokens)
+
+
+
+def reciprocal_rank_fusion(
+    ranked_results: list[list[RetrievedChunk]],
+    question: str,
+    k: int = 60,
+) -> list[RetrievedChunk]:
+    """Combine multiple retrieval rankings using RRF."""
+
+    scores: dict[tuple, float] = {}
+    chunk_map: dict[tuple, RetrievedChunk] = {}
+
+    for results in ranked_results:
+        seen_in_query = set()
+
+        for rank, chunk in enumerate(results, start=1):
+            key = (
+                str(chunk.meeting_id),
+                chunk.text.strip(),
+            )
+
+            if key in seen_in_query:
+                continue
+
+            seen_in_query.add(key)
+            chunk_map[key] = chunk
+
+            scores[key] = (
+                scores.get(key, 0.0)
+                + 1.0 / (k + rank)
+            )
+
+    question_tokens = _tokens(question)
+
+    lexical_scores = {}
+
+    for key, chunk in chunk_map.items():
+        chunk_tokens = _tokens(chunk.text)
+
+        if not question_tokens:
+            lexical_scores[key] = 0.0
+            continue
+
+        overlap = question_tokens & chunk_tokens
+
+        lexical_scores[key] = (
+            len(overlap) / len(question_tokens)
+        )
+
+    lexical_ranking = sorted(
+        lexical_scores,
+        key=lexical_scores.get,
+        reverse=True,
+    )
+
+    for rank, key in enumerate(lexical_ranking, start=1):
+        if lexical_scores[key] > 0:
+            scores[key] += 1.0 / (k + rank)
+
+    ordered_keys = sorted(
+        scores,
+        key=scores.get,
+        reverse=True,
+    )
+
+    return [
+        chunk_map[key]
+        for key in ordered_keys
+    ]
+
+
+
+def generate_search_queries(question: str) -> list[str]:
+    return [
+        question,
+
+        "Explicit action items and commitments made by each speaker.",
+
+        "Development implementation tasks, bug fixes, and technical deliverables.",
+
+        "QA testing, regression testing, load testing, and UAT responsibilities.",
+
+        "Documentation, screenshots, marketing coordination, and communication tasks.",
+
+        "Deadlines, delivery dates, follow-up activities, and release approval owners.",
+    ]
+
+
+
+async def retrieve_question_context(
+    meeting_id: str,
+    question: str,
+    kas: KASClient,
+    top_k: int = 10,
+) -> list[RetrievedChunk]:
+    """Retrieve and fuse relevant meeting transcript chunks."""
+
+    queries = generate_search_queries(question)
+
+    logger.info(
+        "[RAG] Starting retrieval | meeting=%s | queries=%d",
+        meeting_id,
+        len(queries),
+    )
+
+    search_results = await asyncio.gather(
+        *[
+            kas.search(
+                meeting_id=meeting_id,
+                query=query,
+                top_k=top_k,
+            )
+            for query in queries
+        ],
+        return_exceptions=True,
+    )
+
+    valid_results: list[list[RetrievedChunk]] = []
+
+    for index, result in enumerate(search_results):
+
+        if isinstance(result, Exception):
+            logger.error(
+                "[RAG] Search query failed | query=%s | error=%s",
+                queries[index],
+                result,
+            )
+            continue
+
+        logger.info(
+            "[RAG] Query completed | query=%s | results=%d",
+            queries[index],
+            len(result),
+        )
+
+        valid_results.append(result)
+
+    if not valid_results:
+        logger.error(
+            "[RAG] All search queries failed | meeting=%s",
+            meeting_id,
+        )
+        return []
+
+    chunks = reciprocal_rank_fusion(
+        ranked_results=valid_results,
+        question=question,
+    )
+
+    # Log the candidates before limiting context.
+    logger.info(
+        "[RAG] Fusion completed | unique_chunks=%d",
+        len(chunks),
+    )
+
+    for index, chunk in enumerate(chunks[:20], start=1):
+        logger.debug(
+            "[RAG] Ranked chunk %d | score=%s | text=%s",
+            index,
+            chunk.score,
+            chunk.text[:500],
+        )
+
+    # Keep context bounded while retaining candidates from
+    # multiple retrieval queries.
+    context_limit = min(top_k * 3, 40)
+
+    selected = chunks[:context_limit]
+    logger.info(
+        "[RAG] Selected chunks | count=%d",
+        len(selected),
+    )
+
+    return selected
+
+
+
 
 async def answer_question(
     body: ChatRequest,
@@ -338,23 +640,119 @@ async def answer_question(
     kas: KASClient,
     top_k: int | None = None,
 ) -> ChatResponse:
-    """Generate a grounded answer (with citations) for a question."""
-    chunks = await kas.search(body.meeting_id, body.question, top_k=top_k)
+    """Generate a grounded answer using multi-query retrieval."""
+
+    meeting_id = str(body.meeting_id)
+    retrieval_k = top_k or 10
+
+    logger.info(
+        "[RAG] Question received | meeting=%s | question=%s",
+        meeting_id,
+        body.question,
+    )
+
+    # 1. Retrieve evidence using multiple queries.
+    chunks = await retrieve_question_context(
+        meeting_id=meeting_id,
+        question=body.question,
+        kas=kas,
+        top_k=retrieval_k,
+    )
 
     if not chunks:
-        return ChatResponse(answer=NOT_FOUND_MESSAGE, citations=[])
+        logger.warning(
+            "[RAG] No chunks retrieved | meeting=%s",
+            meeting_id,
+        )
 
+        return ChatResponse(
+            answer=NOT_FOUND_MESSAGE,
+            citations=[],
+        )
+
+    # 2. Convert chunks into speaker-level context blocks.
     sections = build_context_sections(chunks)
+
     if not sections:
-        return ChatResponse(answer=NOT_FOUND_MESSAGE, citations=[])
+        logger.warning("[RAG] No usable context sections")
 
-    user_prompt = qa_prompts.build_user_prompt(
-        body.question, [section.prompt_block() for section in sections]
+        return ChatResponse(
+            answer=NOT_FOUND_MESSAGE,
+            citations=[],
+        )
+
+    logger.info(
+        "[RAG] Context prepared | chunks=%d | sections=%d",
+        len(chunks),
+        len(sections),
     )
-    answer = await llm.generate(qa_prompts.SYSTEM_PROMPT, user_prompt)
-    cited_answer, citations = ensure_citations(answer, sections)
 
-    return ChatResponse(answer=cited_answer, citations=citations)
+    # 3. Generate grounded answer.
+    
+    logger.info(
+        "[RAG] ===== RETRIEVED CONTEXT INSPECTION ====="
+    )
+
+    for index, section in enumerate(sections, start=1):
+        logger.info(
+            "[RAG] SECTION [%d] | speaker=%s | timestamp=%s | "
+            "section_id=%s | text=%s",
+            index,
+            section.speaker,
+            section.timestamp,
+            section.section_id,
+            section.text[:1000],
+        )
+
+    logger.info(
+        "[RAG] ===== END CONTEXT INSPECTION ====="
+    )
+    logger.info(
+        "[RAG] Final context statistics | "
+        "chunks=%d | sections=%d | chars=%d",
+        len(chunks),
+        len(sections),
+        sum(len(section.prompt_block()) for section in sections),
+    )
+    user_prompt = qa_prompts.build_user_prompt(
+        body.question,
+        [
+            section.prompt_block()
+            for section in sections
+        ],
+    )
+
+    logger.info(
+        "[RAG] Sending context to LLM | chars=%d",
+        len(user_prompt),
+    )
+
+    answer = await llm.generate(
+        qa_prompts.SYSTEM_PROMPT,
+        user_prompt,
+    )
+
+    logger.info(
+        "[RAG] LLM response | %s",
+        answer[:2000],
+    )
+
+    # 5. Attach citations.
+    cited_answer, citations = ensure_citations(
+        answer,
+        sections,
+    )
+
+    logger.info(
+        "[RAG] Answer complete | citations=%d",
+        len(citations),
+    )
+
+    return ChatResponse(
+        answer=cited_answer,
+        citations=citations,
+    )
+
 
 
 def build_citations(
