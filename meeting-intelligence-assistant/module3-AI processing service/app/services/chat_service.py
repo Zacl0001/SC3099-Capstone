@@ -37,7 +37,7 @@ _STOPWORDS = {
     "each", "few", "for", "from", "further", "get", "go", "had", "has", "have",
     "having", "he", "her", "here", "hers", "him", "his", "how", "i", "if", "in",
     "into", "is", "it", "its", "itself", "just", "me", "might", "more", "most",
-    "must", "my", "no", "nor", "not", "now", "of", "off", "on", "once", "one",
+    "must", "my", "now", "of", "off", "on", "once", "one",
     "only", "or", "other", "our", "ours", "out", "over", "own", "same", "she",
     "should", "so", "some", "such", "than", "that", "the", "their", "theirs",
     "them", "then", "there", "these", "they", "this", "those", "through", "to",
@@ -181,14 +181,42 @@ def _attach_metadata(
 
 
 
+
 def _chunk_sections(chunk: RetrievedChunk) -> list[ContextSection]:
+    """Build original speaker turns from preserved metadata."""
+
+    if chunk.section_metadata:
+        sections = []
+
+        for ref in chunk.section_metadata:
+            if not ref.text:
+                continue
+
+            sections.append(
+                ContextSection(
+                    text=ref.text.strip(),
+                    speaker=ref.speaker,
+                    timestamp=ref.timestamp,
+                    section_id=ref.section_id,
+                )
+            )
+
+        if sections:
+            return sections
+
+    # Backward compatibility with older indexed chunks.
     sections = _split_text(chunk.text)
 
     if not sections and chunk.text.strip():
-        # No recognisable headers: keep the chunk as one fallback block.
-        sections = [ContextSection(text=chunk.text.strip())]
+        sections = [
+            ContextSection(text=chunk.text.strip())
+        ]
 
-    return _attach_metadata(sections, chunk.section_metadata)
+    return _attach_metadata(
+        sections,
+        chunk.section_metadata,
+    )
+
 
 
 def _merge_section_text(old_text: str, new_text: str) -> str:
@@ -223,6 +251,33 @@ def _merge_section_text(old_text: str, new_text: str) -> str:
     # No reliable overlap was found.
     return f"{old_text} {new_text}"
 
+
+def _timestamp_sort_key(section: ContextSection):
+    """Convert transcript timestamps into sortable seconds."""
+
+    timestamp = _normalise_time(section.timestamp)
+
+    if not timestamp:
+        return (1, float("inf"))
+
+    try:
+        parts = timestamp.split(":")
+
+        if len(parts) == 2:
+            minutes, seconds = map(float, parts)
+            total = minutes * 60 + seconds
+
+        elif len(parts) == 3:
+            hours, minutes, seconds = map(float, parts)
+            total = hours * 3600 + minutes * 60 + seconds
+
+        else:
+            return (1, float("inf"))
+
+        return (0, total)
+
+    except (ValueError, TypeError):
+        return (1, float("inf"))
 
 
 def build_context_sections(
@@ -276,10 +331,14 @@ def build_context_sections(
                 if not duplicate:
                     anonymous.append(section)
 
-    return (
+    result = (
         [merged[section_id] for section_id in order]
         + anonymous
     )
+
+    result.sort(key=_timestamp_sort_key)
+
+    return result
 
 
 
@@ -528,20 +587,94 @@ def reciprocal_rank_fusion(
 
 
 
+
 def generate_search_queries(question: str) -> list[str]:
-    return [
-        question,
+    """Generate question-focused retrieval queries."""
 
-        "Explicit action items and commitments made by each speaker.",
+    original = question.strip()
 
-        "Development implementation tasks, bug fixes, and technical deliverables.",
+    normalized = original.lower()
 
-        "QA testing, regression testing, load testing, and UAT responsibilities.",
+    queries = [original]
 
-        "Documentation, screenshots, marketing coordination, and communication tasks.",
+    expansions = {
+        "release": [
+            "release date launch schedule release approval",
+            "final release decision target date fallback date",
+        ],
+        "qa": [
+            "QA approval quality assurance sign off",
+            "original QA date revised QA approval schedule",
+        ],
+        "worker": [
+            "background workers worker count worker scaling",
+            "increase in workers original number new number",
+            "worker concurrency processing capacity",
+        ],
+        "notification": [
+            "notification events delivery attempts retries",
+            "notification processing delivery status queue",
+        ],
+        "testing": [
+            "internal testing external customer testing UAT",
+            "user acceptance testing approval test schedule",
+        ],
+        "performance": [
+            "notification processing latency response time",
+            "normal traffic peak traffic processing targets",
+        ],
+        "security": [
+            "security requirements authorization access control",
+            "deactivated accounts pending notifications",
+        ],
+        "date": [
+            "original date revised date updated deadline",
+            "initial schedule final confirmed schedule",
+        ],
+        "count": [
+            "total count number of records processing attempts",
+            "difference between event count and attempt count",
+        ],
+    }
 
-        "Deadlines, delivery dates, follow-up activities, and release approval owners.",
-    ]
+    for keyword, alternatives in expansions.items():
+        if keyword in normalized:
+            queries.extend(alternatives)
+
+    # Detect questions comparing two concepts.
+    comparison_words = (
+        "difference",
+        "versus",
+        "compare",
+        "compared",
+        "between",
+    )
+
+    if any(word in normalized for word in comparison_words):
+        queries.append(
+            f"definitions meaning distinction explanation: {original}"
+        )
+
+    # Detect questions involving chronology.
+    chronology_words = (
+        "original",
+        "changed",
+        "revised",
+        "latest",
+        "final",
+        "previous",
+        "updated",
+    )
+
+    if any(word in normalized for word in chronology_words):
+        queries.append(
+            f"initial proposal subsequent revision final agreement: {original}"
+        )
+
+    # Preserve order and remove duplicate queries.
+    return list(dict.fromkeys(queries))
+
+
 
 
 
@@ -551,7 +684,7 @@ async def retrieve_question_context(
     kas: KASClient,
     top_k: int = 10,
 ) -> list[RetrievedChunk]:
-    """Retrieve and fuse relevant meeting transcript chunks."""
+    """Retrieve question-relevant transcript chunks."""
 
     queries = generate_search_queries(question)
 
@@ -566,27 +699,27 @@ async def retrieve_question_context(
             kas.search(
                 meeting_id=meeting_id,
                 query=query,
-                top_k=top_k,
+                top_k=min(max(top_k, 10), 20),
             )
             for query in queries
         ],
         return_exceptions=True,
     )
 
-    valid_results: list[list[RetrievedChunk]] = []
+    valid_results = []
 
     for index, result in enumerate(search_results):
 
         if isinstance(result, Exception):
             logger.error(
-                "[RAG] Search query failed | query=%s | error=%s",
+                "[RAG] Search failed | query=%s | error=%s",
                 queries[index],
                 result,
             )
             continue
 
         logger.info(
-            "[RAG] Query completed | query=%s | results=%d",
+            "[RAG] Search completed | query=%s | results=%d",
             queries[index],
             len(result),
         )
@@ -595,7 +728,7 @@ async def retrieve_question_context(
 
     if not valid_results:
         logger.error(
-            "[RAG] All search queries failed | meeting=%s",
+            "[RAG] All retrieval queries failed | meeting=%s",
             meeting_id,
         )
         return []
@@ -605,29 +738,34 @@ async def retrieve_question_context(
         question=question,
     )
 
-    # Log the candidates before limiting context.
-    logger.info(
-        "[RAG] Fusion completed | unique_chunks=%d",
-        len(chunks),
+    # Prioritize chunks that directly match the actual question.
+    chunks.sort(
+        key=lambda chunk: (
+            lexical_score(question, chunk),
+            chunk.score,
+        ),
+        reverse=True,
     )
 
-    for index, chunk in enumerate(chunks[:20], start=1):
-        logger.debug(
-            "[RAG] Ranked chunk %d | score=%s | text=%s",
-            index,
-            chunk.score,
-            chunk.text[:500],
-        )
-
-    # Keep context bounded while retaining candidates from
-    # multiple retrieval queries.
     context_limit = min(top_k * 3, 40)
 
     selected = chunks[:context_limit]
+
     logger.info(
-        "[RAG] Selected chunks | count=%d",
+        "[RAG] Retrieval finished | candidates=%d | selected=%d",
+        len(chunks),
         len(selected),
     )
+
+    for index, chunk in enumerate(selected, start=1):
+        logger.debug(
+            "[RAG] Selected chunk %d | score=%s | "
+            "lexical=%s | text=%s",
+            index,
+            chunk.score,
+            lexical_score(question, chunk),
+            chunk.text[:500],
+        )
 
     return selected
 
@@ -643,7 +781,7 @@ async def answer_question(
     """Generate a grounded answer using multi-query retrieval."""
 
     meeting_id = str(body.meeting_id)
-    retrieval_k = top_k or 10
+    retrieval_k = top_k or body.top_k or 10
 
     logger.info(
         "[RAG] Question received | meeting=%s | question=%s",

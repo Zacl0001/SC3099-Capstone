@@ -350,18 +350,6 @@ def search(body: SearchRequest) -> dict:
 
         results.append(result)
 
-    print("\n[SEARCH DEBUG]")
-    print(f"Meeting ID: {meeting_id}")
-    print(f"Query: {body.query}")
-    print(f"Requested top_k: {body.top_k}")
-    print(f"Retrieved: {len(results)}")
-
-    for index, result in enumerate(results, start=1):
-        print(f"\n--- RESULT {index} ---")
-        print(f"Score: {result['score']}")
-        print(f"Title: {result['title']}")
-        print(f"Text: {result['text'][:1000]}")
-
     return {
         "query": body.query,
         "meeting_id": meeting_id,

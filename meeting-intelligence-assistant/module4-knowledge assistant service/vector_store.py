@@ -5,12 +5,21 @@ else:
 from llama_index.core.vector_stores import SimpleVectorStore
 from llama_index.vector_stores.postgres import PGVectorStore
 
+
 def create_vector_store():
+    """Create the configured vector store."""
+
     if config.VECTOR_STORE_TYPE == "simple":
         return create_simple_vector_store()
 
     if config.VECTOR_STORE_TYPE == "postgres":
         return create_postgres_vector_store()
+
+    raise ValueError(
+        f"Unsupported VECTOR_STORE_TYPE: "
+        f"{config.VECTOR_STORE_TYPE}"
+    )
+
 
 def create_simple_vector_store() -> SimpleVectorStore:
     return SimpleVectorStore()
